@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Razom — New request</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">Razom<span>.</span></div>
+    <div class="spacer"></div>
+    <div class="user-box" id="userBox"></div>
+  </header>
+  <div class="auth-wrap" style="align-items:flex-start">
+    <div class="card auth-card" style="max-width:560px">
+      <h1>Ask for help</h1>
+      <p class="sub">Pick the location on the map, then fill in the details.</p>
+      <div id="pickerMap" style="height:280px;border-radius:10px;margin-bottom:14px"></div>
+      <form id="reqForm">
+        <label>Category</label>
+        <select name="category" id="category"></select>
+        <label>Title (optional)</label>
+        <input name="title" placeholder="e.g. Need phone charged" />
+        <label>Description</label>
+        <textarea name="description" rows="3" required placeholder="Describe what you need..."></textarea>
+        <label>Exact address (optional, shown only to you and your volunteer)</label>
+        <input name="address" placeholder="Street, building, apt" />
+        <div class="row" style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <span class="meta-line">Selected point:</span>
+          <span id="coords" class="meta-line">— click the map —</span>
+        </div>
+        <div id="err" class="notice" style="display:none;background:rgba(217,83,79,.15);border-color:var(--danger);color:var(--danger)"></div>
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <button type="submit">Create request</button>
+          <a href="/index.html" class="btn secondary" style="text-decoration:none;display:inline-flex;align-items:center">Cancel</a>
+        </div>
+        <p class="privacy-note">🔒 Only an approximate location (~300m) appears on the public map. Your exact address is visible only to you and the volunteer who claims your request.</p>
+      </form>
+    </div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    if (!requireAuth()) throw new Error("redirect");
+    renderUserBox();
+    const sel = document.getElementById("category");
+    CATEGORIES.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
+
+    const map = L.map("pickerMap").setView([50.4501, 30.5234], 12); // Kyiv
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+    let marker = null;
+    let picked = null;
+    map.on("click", (e) => {
+      picked = e.latlng;
+      if (marker) marker.setLatLng(picked); else marker = L.marker(picked).addTo(map);
+      document.getElementById("coords").textContent = picked.lat.toFixed(5) + ", " + picked.lng.toFixed(5);
+    });
+
+    document.getElementById("reqForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("err");
+      err.style.display = "none";
+      if (!picked) { err.textContent = "Please pick a location on the map."; err.style.display = "block"; return; }
+      const f = new FormData(e.target);
+      const body = {
+        category: f.get("category"),
+        title: f.get("title") || null,
+        description: f.get("description"),
+        latitude: picked.lat,
+        longitude: picked.lng,
+        address: f.get("address") || null,
+      };
+      try {
+        await API.post("/requests", body);
+        location.href = "/index.html";
+      } catch (ex) {
+        err.textContent = ex.message; err.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

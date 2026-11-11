@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Razom — Login</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">Razom<span>.</span></div>
+    <div class="spacer"></div>
+    <div class="user-box"><a href="/register.html">Create account</a></div>
+  </header>
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <h1>Welcome back</h1>
+      <p class="sub">Log in to ask for help or volunteer near you.</p>
+      <form id="loginForm">
+        <label>Email</label>
+        <input type="email" name="email" required placeholder="you@example.com" />
+        <label>Password</label>
+        <input type="password" name="password" required placeholder="••••••••" />
+        <div id="err" class="notice" style="display:none;background:rgba(217,83,79,.15);border-color:var(--danger);color:var(--danger)"></div>
+        <button type="submit" style="width:100%;margin-top:16px">Log in</button>
+      </form>
+    </div>
+  </div>
+  <script src="/js/app.js"></script>
+  <script>
+    renderUserBox();
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const err = document.getElementById("err");
+      err.style.display = "none";
+      try {
+        const res = await API.post("/auth/login", {
+          email: f.get("email"), password: f.get("password"),
+        });
+        API.setToken(res.access_token);
+        API.setUser({ id: res.user_id, display_name: res.display_name, roles: res.roles });
+        location.href = "/index.html";
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

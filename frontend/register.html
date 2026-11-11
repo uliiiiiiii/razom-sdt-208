@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Razom — Register</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">Razom<span>.</span></div>
+    <div class="spacer"></div>
+    <div class="user-box"><a href="/login.html">Already have an account?</a></div>
+  </header>
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <h1>Create your account</h1>
+      <p class="sub">Resident and Volunteer can be combined.</p>
+      <form id="regForm">
+        <label>Display name</label>
+        <input name="display_name" required placeholder="Your name" />
+        <label>Email</label>
+        <input type="email" name="email" required placeholder="you@example.com" />
+        <label>Password (min 6)</label>
+        <input type="password" name="password" required minlength="6" placeholder="••••••••" />
+        <label>Phone (optional)</label>
+        <input name="phone" placeholder="+380..." />
+
+        <label>I want to be a…</label>
+        <div class="roles" id="roles">
+          <label class="role-chip active"><input type="checkbox" name="is_resident" checked /> 🏠 Resident</label>
+          <label class="role-chip"><input type="checkbox" name="is_volunteer" /> 🤝 Volunteer</label>
+          <label class="role-chip"><input type="checkbox" name="is_organization" /> 🏢 Organization</label>
+        </div>
+
+        <div id="err" class="notice" style="display:none;background:rgba(217,83,79,.15);border-color:var(--danger);color:var(--danger)"></div>
+        <button type="submit" style="width:100%;margin-top:16px">Create account</button>
+      </form>
+    </div>
+  </div>
+  <script src="/js/app.js"></script>
+  <script>
+    renderUserBox();
+    // role chip visual toggle
+    document.querySelectorAll("#roles .role-chip input").forEach((cb) => {
+      cb.addEventListener("change", () => cb.closest(".role-chip").classList.toggle("active", cb.checked));
+    });
+    document.getElementById("regForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const err = document.getElementById("err");
+      err.style.display = "none";
+      const body = {
+        display_name: f.get("display_name"),
+        email: f.get("email"),
+        password: f.get("password"),
+        phone: f.get("phone") || null,
+        is_resident: !!f.get("is_resident"),
+        is_volunteer: !!f.get("is_volunteer"),
+        is_organization: !!f.get("is_organization"),
+      };
+      try {
+        await API.post("/auth/register", body);
+        // auto-login
+        const res = await API.post("/auth/login", { email: body.email, password: body.password });
+        API.setToken(res.access_token);
+        API.setUser({ id: res.user_id, display_name: res.display_name, roles: res.roles });
+        location.href = "/index.html";
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

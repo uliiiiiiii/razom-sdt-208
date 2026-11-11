@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Razom — Help near you</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">Razom<span>.</span></div>
+    <div class="spacer"></div>
+    <div class="user-box" id="userBox"></div>
+  </header>
+  <main>
+    <div class="map-side card">
+      <h3>Find help near you</h3>
+      <div class="filters">
+        <label>Radius (m)</label>
+        <div class="row"><input type="number" id="radius" value="3000" min="100" max="200000" /></div>
+        <label>Category</label>
+        <div class="row"><select id="category"><option value="">All categories</option></select></div>
+        <label>Center the search here</label>
+        <div class="row">
+          <input type="number" id="lat" step="0.0001" placeholder="lat" />
+          <input type="number" id="lng" step="0.0001" placeholder="lng" />
+        </div>
+        <button id="searchBtn">Search this area</button>
+        <button class="secondary" id="hereBtn">Use map center</button>
+      </div>
+      <div id="resultsCount" class="meta-line" style="margin-top:12px"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="card detail-panel" id="detailPanel">
+      <span class="close-x" onclick="document.getElementById('detailPanel').classList.remove('open')">&times;</span>
+      <div id="detailBody"></div>
+    </div>
+
+    <button class="create-fab" onclick="location.href='/create.html'">+ New request</button>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    if (!requireAuth()) throw new Error("redirect");
+    renderUserBox();
+    const user = API.user();
+
+    const catSel = document.getElementById("category");
+    CATEGORIES.forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; catSel.appendChild(o); });
+
+    const map = L.map("map").setView([50.4501, 30.5234], 12); // Kyiv
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+
+    let markers = [];
+    function clearMarkers() { markers.forEach(m => map.removeLayer(m)); markers = []; }
+
+    document.getElementById("hereBtn").addEventListener("click", () => {
+      const c = map.getCenter();
+      document.getElementById("lat").value = c.lat.toFixed(5);
+      document.getElementById("lng").value = c.lng.toFixed(5);
+    });
+
+    async function search() {
+      const lat = parseFloat(document.getElementById("lat").value);
+      const lng = parseFloat(document.getElementById("lng").value);
+      if (isNaN(lat) || isNaN(lng)) { alert("Set a latitude and longitude (or click 'Use map center')."); return; }
+      const radius = document.getElementById("radius").value || 3000;
+      const cat = document.getElementById("category").value;
+      let url = `/requests/map?lat=${lat}&lng=${lng}&radius=${radius}`;
+      if (cat) url += `&category=${cat}`;
+      clearMarkers();
+      try {
+        const items = await API.get(url);
+        document.getElementById("resultsCount").textContent =
+          items.length ? `${items.length} open request(s) within ${fmtDist(radius*1)}.` : "No open requests in this area.";
+        items.forEach(it => {
+          const m = L.marker([it.latitude, it.longitude]).addTo(map);
+          m.bindPopup(`<b>${it.title || it.category}</b><br>${it.category} · ${fmtDist(it.distance_m)} away<br>
+            <a href="#" onclick="openDetail(${it.id});return false;">View details</a>`);
+          m.on("click", () => openDetail(it.id));
+          markers.push(m);
+        });
+      } catch (ex) { document.getElementById("resultsCount").textContent = "Error: " + ex.message; }
+    }
+
+    async function openDetail(id) {
+      const panel = document.getElementById("detailPanel");
+      const body = document.getElementById("detailBody");
+      body.innerHTML = "Loading...";
+      panel.classList.add("open");
+      try {
+        const r = await API.get(`/requests/${id}`);
+        const canClaim = user.roles.includes("volunteer") && r.status === "open" && r.author_id !== user.id;
+        const isAuthor = r.author_id === user.id;
+        const isClaimer = r.claimed_by === user.id;
+        let actions = "";
+        if (canClaim) actions += `<button onclick="act(${id},'claim')">Claim this request</button>`;
+        if (isClaimer && r.status === "claimed")
+          actions += `<button onclick="act(${id},'complete')">Mark completed</button>
+                      <button class="secondary" onclick="act(${id},'release')">Release</button>`;
+        if (isAuthor && (r.status === "open" || r.status === "claimed"))
+          actions += `<button class="danger" onclick="act(${id},'cancel')">Cancel request</button>`;
+        if (isAuthor && r.status === "completed")
+          actions += `<button onclick="act(${id},'confirm')">Confirm received</button>
+                      <button class="secondary" onclick="act(${id},'reopen')">Not resolved — reopen</button>`;
+        const loc = r.exact_location
+          ? `${r.latitude.toFixed(5)}, ${r.longitude.toFixed(5)} <span class="badge open" style="margin-left:6px">exact</span>`
+          : `${r.latitude ? r.latitude.toFixed(3) : "?"}, ${r.longitude ? r.longitude.toFixed(3) : "?"} <span class="meta-line">(approx.)</span>`;
+        const addr = r.exact_location && r.address ? `<div class="meta-line">📍 ${r.address}</div>` : "";
+        const claimer = r.exact_location && r.claimed_by ? `<div class="meta-line">🤝 Claimed by user #${r.claimed_by}</div>` : "";
+        const privacy = r.exact_location
+          ? `<div class="notice">Exact location revealed to you.</div>`
+          : `<div class="privacy-note">🔒 Approximate location shown. Exact address is visible only to the author and the volunteer who claims the request.</div>`;
+        body.innerHTML = `
+          <h3 style="margin:0 0 4px">${r.title || r.category}</h3>
+          <span class="badge ${r.status}">${r.status}</span>
+          <div class="meta-line" style="margin-top:8px">📂 ${r.category}</div>
+          <div class="meta-line">📍 ${loc}</div>
+          ${addr}${claimer}
+          <div style="margin-top:10px">${r.description}</div>
+          <div class="meta-line" style="margin-top:8px">Created ${new Date(r.created_at).toLocaleString()}</div>
+          ${privacy}
+          <div class="actions">${actions || '<span class="meta-line">No actions available for your role here.</span>'}</div>
+        `;
+      } catch (ex) { body.innerHTML = `<div class="notice" style="background:rgba(217,83,79,.15);border-color:var(--danger);color:var(--danger)">${ex.message}</div>`; }
+    }
+    window.openDetail = openDetail;
+
+    async function act(id, action) {
+      try {
+        await API.patch(`/requests/${id}/${action}`, {});
+        openDetail(id);
+      } catch (ex) { alert(ex.message); }
+    }
+    window.act = act;
+
+    // initial search around Kyiv
+    document.getElementById("lat").value = "50.4501";
+    document.getElementById("lng").value = "30.5234";
+    search();
+  </script>
+</body>
+</html>
+
+    document.getElementById("searchBtn").addEventListener("click", search);

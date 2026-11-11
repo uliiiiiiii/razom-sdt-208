@@ -1,0 +1,23 @@
+# PostgreSQL + PostGIS for the Razom Alpha.
+# Run:  docker compose up -d db
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: razom-db
+    environment:
+      POSTGRES_USER: razom
+      POSTGRES_PASSWORD: razom
+      POSTGRES_DB: razom
+    ports:
+      - "5432:5432"
+    volumes:
+      - razom-db-data:/var/lib/postgresql/data
+      - ../db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U razom"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  razom-db-data:
