@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserRegister(BaseModel):
@@ -37,7 +38,11 @@ class UserOut(BaseModel):
 
 
 class RequestCreate(BaseModel):
-    category: str
+    # strip whitespace so a blank description fails min_length
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # must match the CHECK constraint on help_requests.category in db/init.sql
+    category: Literal["charging", "groceries", "medicine", "water", "transport", "pets", "other"]
     description: str = Field(min_length=1)
     title: str | None = None
     latitude: float = Field(ge=-90, le=90)
