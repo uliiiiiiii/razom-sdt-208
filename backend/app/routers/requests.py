@@ -60,6 +60,7 @@ def create_request(
     if not user.is_resident:
         raise HTTPException(403, detail="Only residents can create help requests")
 
+    _lock_user(db, user)
     active = db.scalar(
         select(func.count(HelpRequest.id)).where(
             HelpRequest.author_id == user.id,
@@ -151,6 +152,7 @@ def claim_request(
     if not user.is_volunteer:
         raise HTTPException(403, detail="Only volunteers can claim requests")
 
+    _lock_user(db, user)
     active_claims = db.scalar(
         select(func.count(HelpRequest.id)).where(
             HelpRequest.claimed_by == user.id,
@@ -289,6 +291,12 @@ def cancel_request(
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+def _lock_user(db: Session, user: User) -> None:
+    """Lock the user's row until commit so concurrent requests from the same
+    user can't all pass a count-based limit check at once."""
+    db.execute(select(User.id).where(User.id == user.id).with_for_update())
+
+
 def _transition(request: HelpRequest, action: str) -> None:
     from_states, target = TRANSITIONS[action]
     if request.status not in from_states:
