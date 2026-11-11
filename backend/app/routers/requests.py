@@ -303,8 +303,9 @@ def _serialize(request: HelpRequest, viewer: User, db: Session) -> dict:
     """Apply privacy-by-role filtering before returning a request to the client."""
     is_author = request.author_id == viewer.id
     is_claimer = request.claimed_by == viewer.id
-    is_moderator = viewer.is_moderator
-    reveal_exact = is_author or is_claimer or is_moderator
+    # Moderators get the exact address only via report review (not built yet),
+    # never through the regular endpoints.
+    reveal_exact = is_author or is_claimer
 
     geom_col = HelpRequest.location if reveal_exact else HelpRequest.approx_location
     coords = db.execute(
