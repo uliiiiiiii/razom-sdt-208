@@ -139,7 +139,7 @@ def get_request(
     return _serialize(request, user, db)
 
 
-@router.post("/{request_id}/claim", response_model=RequestOut)
+@router.patch("/{request_id}/claim", response_model=RequestOut)
 def claim_request(
     request_id: int,
     db: Session = Depends(get_db),
