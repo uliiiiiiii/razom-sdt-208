@@ -81,7 +81,7 @@
           items.length ? `${items.length} open request(s) within ${fmtDist(radius*1)}.` : "No open requests in this area.";
         items.forEach(it => {
           const m = L.marker([it.latitude, it.longitude]).addTo(map);
-          m.bindPopup(`<b>${it.title || it.category}</b><br>${it.category} · ${fmtDist(it.distance_m)} away<br>
+          m.bindPopup(`<b>${esc(it.title || it.category)}</b><br>${esc(it.category)} ·${fmtDist(it.distance_m)} away<br>
             <a href="#" onclick="openDetail(${it.id});return false;">View details</a>`);
           m.on("click", () => openDetail(it.id));
           markers.push(m);
@@ -112,23 +112,23 @@
         const loc = r.exact_location
           ? `${r.latitude.toFixed(5)}, ${r.longitude.toFixed(5)} <span class="badge open" style="margin-left:6px">exact</span>`
           : `${r.latitude ? r.latitude.toFixed(3) : "?"}, ${r.longitude ? r.longitude.toFixed(3) : "?"} <span class="meta-line">(approx.)</span>`;
-        const addr = r.exact_location && r.address ? `<div class="meta-line">📍 ${r.address}</div>` : "";
+        const addr = r.exact_location && r.address ? `<div class="meta-line">📍 ${esc(r.address)}</div>` : "";
         const claimer = r.exact_location && r.claimed_by ? `<div class="meta-line">🤝 Claimed by user #${r.claimed_by}</div>` : "";
         const privacy = r.exact_location
           ? `<div class="notice">Exact location revealed to you.</div>`
           : `<div class="privacy-note">🔒 Approximate location shown. Exact address is visible only to the author and the volunteer who claims the request.</div>`;
         body.innerHTML = `
-          <h3 style="margin:0 0 4px">${r.title || r.category}</h3>
-          <span class="badge ${r.status}">${r.status}</span>
-          <div class="meta-line" style="margin-top:8px">📂 ${r.category}</div>
+          <h3 style="margin:0 0 4px">${esc(r.title || r.category)}</h3>
+          <span class="badge ${esc(r.status)}">${esc(r.status)}</span>
+          <div class="meta-line" style="margin-top:8px">📂 ${esc(r.category)}</div>
           <div class="meta-line">📍 ${loc}</div>
           ${addr}${claimer}
-          <div style="margin-top:10px">${r.description}</div>
+          <div style="margin-top:10px">${esc(r.description)}</div>
           <div class="meta-line" style="margin-top:8px">Created ${new Date(r.created_at).toLocaleString()}</div>
           ${privacy}
           <div class="actions">${actions || '<span class="meta-line">No actions available for your role here.</span>'}</div>
         `;
-      } catch (ex) { body.innerHTML = `<div class="notice" style="background:rgba(217,83,79,.15);border-color:var(--danger);color:var(--danger)">${ex.message}</div>`; }
+      } catch (ex) { body.innerHTML = `<div class="notice" style="background:rgba(217,83,79,.15);border-color:var(--danger);color:var(--danger)">${esc(ex.message)}</div>`; }
     }
     window.openDetail = openDetail;
 
@@ -140,6 +140,8 @@
     }
     window.act = act;
 
+    document.getElementById("searchBtn").addEventListener("click", search);
+
     // initial search around Kyiv
     document.getElementById("lat").value = "50.4501";
     document.getElementById("lng").value = "30.5234";
@@ -147,5 +149,3 @@
   </script>
 </body>
 </html>
-
-    document.getElementById("searchBtn").addEventListener("click", search);

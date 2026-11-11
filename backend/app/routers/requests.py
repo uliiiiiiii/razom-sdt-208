@@ -24,13 +24,16 @@ router = APIRouter(prefix="/requests", tags=["help-requests"])
 MAX_ACTIVE_PER_RESIDENT = 3
 MAX_CLAIMS_PER_VOLUNTEER = 2
 
-# Allowed state transitions (from -> set of to-states)
-ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    "open": {"claimed", "cancelled"},
-    "claimed": {"open", "completed", "cancelled"},
-    "completed": {"confirmed", "open"},
-    "confirmed": set(),
-    "cancelled": set(),
+# Allowed transitions per action: action -> (allowed from-states, to-state).
+# Keyed by action, not just by state, so e.g. 'reopen' can't be used to
+# kick a volunteer off a claimed request. 'claim' (open -> claimed) is an
+# atomic UPDATE in claim_request.
+TRANSITIONS: dict[str, tuple[set[str], str]] = {
+    "release": ({"claimed"}, "open"),
+    "complete": ({"claimed"}, "completed"),
+    "confirm": ({"completed"}, "confirmed"),
+    "reopen": ({"completed"}, "open"),
+    "cancel": ({"open", "claimed"}, "cancelled"),
 }
 
 
@@ -57,6 +60,7 @@ def create_request(
     if not user.is_resident:
         raise HTTPException(403, detail="Only residents can create help requests")
 
+    _lock_user(db, user)
     active = db.scalar(
         select(func.count(HelpRequest.id)).where(
             HelpRequest.author_id == user.id,
@@ -139,7 +143,7 @@ def get_request(
     return _serialize(request, user, db)
 
 
-@router.post("/{request_id}/claim", response_model=RequestOut)
+@router.patch("/{request_id}/claim", response_model=RequestOut)
 def claim_request(
     request_id: int,
     db: Session = Depends(get_db),
@@ -148,6 +152,7 @@ def claim_request(
     if not user.is_volunteer:
         raise HTTPException(403, detail="Only volunteers can claim requests")
 
+    _lock_user(db, user)
     active_claims = db.scalar(
         select(func.count(HelpRequest.id)).where(
             HelpRequest.claimed_by == user.id,
@@ -196,7 +201,7 @@ def release_request(
         raise HTTPException(404, detail="Request not found")
     if request.claimed_by != user.id:
         raise HTTPException(403, detail="Only the volunteer who claimed this request can release it")
-    _transition(request, "open")
+    _transition(request, "release")
     request.claimed_by = None
     request.claimed_at = None
     request.updated_at = datetime.now(timezone.utc)
@@ -216,7 +221,7 @@ def complete_request(
         raise HTTPException(404, detail="Request not found")
     if request.claimed_by != user.id:
         raise HTTPException(403, detail="Only the volunteer who claimed this request can complete it")
-    _transition(request, "completed")
+    _transition(request, "complete")
     request.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(request)
@@ -235,7 +240,7 @@ def confirm_request(
         raise HTTPException(404, detail="Request not found")
     if request.author_id != user.id:
         raise HTTPException(403, detail="Only the resident who created this request can confirm it")
-    _transition(request, "confirmed")
+    _transition(request, "confirm")
     request.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(request)
@@ -254,7 +259,7 @@ def reopen_request(
         raise HTTPException(404, detail="Request not found")
     if request.author_id != user.id:
         raise HTTPException(403, detail="Only the resident who created this request can reopen it")
-    _transition(request, "open")
+    _transition(request, "reopen")
     request.claimed_by = None
     request.claimed_at = None
     request.updated_at = datetime.now(timezone.utc)
@@ -274,7 +279,7 @@ def cancel_request(
         raise HTTPException(404, detail="Request not found")
     if request.author_id != user.id:
         raise HTTPException(403, detail="Only the resident who created this request can cancel it")
-    _transition(request, "cancelled")
+    _transition(request, "cancel")
     request.claimed_by = None
     request.claimed_at = None
     request.updated_at = datetime.now(timezone.utc)
@@ -286,12 +291,18 @@ def cancel_request(
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-def _transition(request: HelpRequest, target: str) -> None:
-    allowed = ALLOWED_TRANSITIONS.get(request.status, set())
-    if target not in allowed:
+def _lock_user(db: Session, user: User) -> None:
+    """Lock the user's row until commit so concurrent requests from the same
+    user can't all pass a count-based limit check at once."""
+    db.execute(select(User.id).where(User.id == user.id).with_for_update())
+
+
+def _transition(request: HelpRequest, action: str) -> None:
+    from_states, target = TRANSITIONS[action]
+    if request.status not in from_states:
         raise HTTPException(
             409,
-            detail=f"Transition '{request.status}' -> '{target}' is not allowed",
+            detail=f"Cannot {action} a request in status '{request.status}'",
         )
     request.status = target
 
@@ -300,8 +311,9 @@ def _serialize(request: HelpRequest, viewer: User, db: Session) -> dict:
     """Apply privacy-by-role filtering before returning a request to the client."""
     is_author = request.author_id == viewer.id
     is_claimer = request.claimed_by == viewer.id
-    is_moderator = viewer.is_moderator
-    reveal_exact = is_author or is_claimer or is_moderator
+    # Moderators get the exact address only via report review (not built yet),
+    # never through the regular endpoints.
+    reveal_exact = is_author or is_claimer
 
     geom_col = HelpRequest.location if reveal_exact else HelpRequest.approx_location
     coords = db.execute(
