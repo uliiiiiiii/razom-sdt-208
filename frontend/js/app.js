@@ -32,6 +32,11 @@ const API = (() => {
   };
 })();
 
+// Escape user-supplied text before putting it into innerHTML.
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
 function logout() { API.clear(); location.href = "/login.html"; }
 
 function renderUserBox() {
@@ -39,7 +44,7 @@ function renderUserBox() {
   if (!box) return;
   const u = API.user();
   if (u) {
-    box.innerHTML = `<b>${u.display_name}</b> &middot; ${u.roles.join(", ")}
+    box.innerHTML = `<b>${esc(u.display_name)}</b> &middot; ${esc(u.roles.join(", "))}
       <button class="btn secondary" style="margin-left:10px;padding:6px 12px" onclick="logout()">Logout</button>`;
   } else {
     box.innerHTML = `<a href="/login.html">Login</a> &middot; <a href="/register.html">Register</a>`;
