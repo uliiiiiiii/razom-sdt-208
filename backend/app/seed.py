@@ -45,7 +45,7 @@ def main() -> int:
     parser.add_argument("--password", default="admin123")
     parser.add_argument("--name", default="Admin")
     args = parser.parse_args()
-    seed_moderator(args.email, args.password, args.name)
+    seed_moderator(args.email.lower(), args.password, args.name)
     return 0
 
 

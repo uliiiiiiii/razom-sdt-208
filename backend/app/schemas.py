@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+
+# lowercased so A@x.com and a@x.com are the same account
+Email = Annotated[EmailStr, AfterValidator(str.lower)]
 
 
 class UserRegister(BaseModel):
-    email: EmailStr
+    email: Email
     password: str = Field(min_length=6)
     display_name: str = Field(min_length=1, max_length=100)
     phone: str | None = None
@@ -18,7 +21,7 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: Email
     password: str
 
 
