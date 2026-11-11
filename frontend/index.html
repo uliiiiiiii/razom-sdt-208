@@ -140,6 +140,8 @@
     }
     window.act = act;
 
+    document.getElementById("searchBtn").addEventListener("click", search);
+
     // initial search around Kyiv
     document.getElementById("lat").value = "50.4501";
     document.getElementById("lng").value = "30.5234";
@@ -147,5 +149,3 @@
   </script>
 </body>
 </html>
-
-    document.getElementById("searchBtn").addEventListener("click", search);
