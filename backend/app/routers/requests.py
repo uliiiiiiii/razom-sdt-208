@@ -24,13 +24,16 @@ router = APIRouter(prefix="/requests", tags=["help-requests"])
 MAX_ACTIVE_PER_RESIDENT = 3
 MAX_CLAIMS_PER_VOLUNTEER = 2
 
-# Allowed state transitions (from -> set of to-states)
-ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    "open": {"claimed", "cancelled"},
-    "claimed": {"open", "completed", "cancelled"},
-    "completed": {"confirmed", "open"},
-    "confirmed": set(),
-    "cancelled": set(),
+# Allowed transitions per action: action -> (allowed from-states, to-state).
+# Keyed by action, not just by state, so e.g. 'reopen' can't be used to
+# kick a volunteer off a claimed request. 'claim' (open -> claimed) is an
+# atomic UPDATE in claim_request.
+TRANSITIONS: dict[str, tuple[set[str], str]] = {
+    "release": ({"claimed"}, "open"),
+    "complete": ({"claimed"}, "completed"),
+    "confirm": ({"completed"}, "confirmed"),
+    "reopen": ({"completed"}, "open"),
+    "cancel": ({"open", "claimed"}, "cancelled"),
 }
 
 
@@ -196,7 +199,7 @@ def release_request(
         raise HTTPException(404, detail="Request not found")
     if request.claimed_by != user.id:
         raise HTTPException(403, detail="Only the volunteer who claimed this request can release it")
-    _transition(request, "open")
+    _transition(request, "release")
     request.claimed_by = None
     request.claimed_at = None
     request.updated_at = datetime.now(timezone.utc)
@@ -216,7 +219,7 @@ def complete_request(
         raise HTTPException(404, detail="Request not found")
     if request.claimed_by != user.id:
         raise HTTPException(403, detail="Only the volunteer who claimed this request can complete it")
-    _transition(request, "completed")
+    _transition(request, "complete")
     request.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(request)
@@ -235,7 +238,7 @@ def confirm_request(
         raise HTTPException(404, detail="Request not found")
     if request.author_id != user.id:
         raise HTTPException(403, detail="Only the resident who created this request can confirm it")
-    _transition(request, "confirmed")
+    _transition(request, "confirm")
     request.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(request)
@@ -254,7 +257,7 @@ def reopen_request(
         raise HTTPException(404, detail="Request not found")
     if request.author_id != user.id:
         raise HTTPException(403, detail="Only the resident who created this request can reopen it")
-    _transition(request, "open")
+    _transition(request, "reopen")
     request.claimed_by = None
     request.claimed_at = None
     request.updated_at = datetime.now(timezone.utc)
@@ -274,7 +277,7 @@ def cancel_request(
         raise HTTPException(404, detail="Request not found")
     if request.author_id != user.id:
         raise HTTPException(403, detail="Only the resident who created this request can cancel it")
-    _transition(request, "cancelled")
+    _transition(request, "cancel")
     request.claimed_by = None
     request.claimed_at = None
     request.updated_at = datetime.now(timezone.utc)
@@ -286,12 +289,12 @@ def cancel_request(
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-def _transition(request: HelpRequest, target: str) -> None:
-    allowed = ALLOWED_TRANSITIONS.get(request.status, set())
-    if target not in allowed:
+def _transition(request: HelpRequest, action: str) -> None:
+    from_states, target = TRANSITIONS[action]
+    if request.status not in from_states:
         raise HTTPException(
             409,
-            detail=f"Transition '{request.status}' -> '{target}' is not allowed",
+            detail=f"Cannot {action} a request in status '{request.status}'",
         )
     request.status = target
 
