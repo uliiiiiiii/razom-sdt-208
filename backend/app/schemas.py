@@ -277,3 +277,23 @@ class AccessLogEntry(BaseModel):
     user: VolunteerRef
     via: str
     accessed_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# statistics
+# ---------------------------------------------------------------------------
+class OrgStats(BaseModel):
+    opportunities_total: int
+    opportunities_open: int
+    signups_total: int
+    attended_total: int
+    past_opportunities: int
+
+
+class PlatformStats(BaseModel):
+    requests_by_status: dict[str, int]
+    requests_by_category: dict[str, int]
+    users_total: int
+    active_users_30d: int
+    pending_reports: int
+    pending_organizations: int

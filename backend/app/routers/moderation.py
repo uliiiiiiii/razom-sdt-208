@@ -23,12 +23,15 @@ from ..schemas import (
     AccessLogEntry,
     OrganizationAdmin,
     OrgDecision,
+    OrgStats,
+    PlatformStats,
     ReportDecision,
     ReportDetail,
     ReportOut,
     UserAdmin,
     UserUpdate,
 )
+from ..stats import org_stats, platform_stats
 from .opportunities import serialize_opportunity
 
 router = APIRouter(
@@ -136,6 +139,18 @@ def decide_organization(
     )
     db.commit()
     return _org_out(org, db.get(User, org.user_id))
+
+
+@router.get("/organizations/{org_id}/stats", response_model=OrgStats)
+def organization_stats(org_id: int, db: Session = Depends(get_db)) -> dict:
+    if db.get(Organization, org_id) is None:
+        raise HTTPException(404, detail="Organization not found")
+    return org_stats(db, org_id)
+
+
+@router.get("/stats", response_model=PlatformStats)
+def stats(db: Session = Depends(get_db)) -> dict:
+    return platform_stats(db)
 
 
 # ---------------------------------------------------------------------------

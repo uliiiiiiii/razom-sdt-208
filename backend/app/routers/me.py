@@ -16,7 +16,8 @@ from ..models import (
     VerificationLog,
 )
 from ..privacy import serialize_request
-from ..schemas import MySignupOut, OpportunityOut, OrganizationMe, RequestOut
+from ..schemas import MySignupOut, OpportunityOut, OrganizationMe, OrgStats, RequestOut
+from ..stats import org_stats
 from .opportunities import serialize_opportunity
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -62,6 +63,13 @@ def my_organization(
         "verification_status": org.verification_status,
         "comment": comment,
     }
+
+
+@router.get("/organization/stats", response_model=OrgStats)
+def my_organization_stats(
+    db: Session = Depends(get_db), org: Organization = Depends(get_my_organization)
+) -> dict:
+    return org_stats(db, org.id)
 
 
 @router.get("/opportunities", response_model=list[OpportunityOut])
