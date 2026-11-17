@@ -1,3 +1,18 @@
+"""Baseline: the Alpha schema (formerly db/init.sql).
+
+Every statement is IF NOT EXISTS, so this also runs cleanly on a database
+that was created by the Alpha's init.sql.
+
+Revision ID: 0001
+"""
+from alembic import op
+
+revision = "0001"
+down_revision = None
+branch_labels = None
+depends_on = None
+
+SQL = r"""
 -- Razom — database schema (PostgreSQL + PostGIS)
 -- Stage 2 Alpha: full design; the request-lifecycle tables are exercised
 -- end-to-end. Organization/opportunity/report tables are created now so the
@@ -140,3 +155,12 @@ CREATE INDEX IF NOT EXISTS idx_signup_opp             ON opportunity_signups (op
 CREATE INDEX IF NOT EXISTS idx_signup_vol             ON opportunity_signups (volunteer_id);
 CREATE INDEX IF NOT EXISTS idx_reports_target         ON reports (target_type, target_id, status);
 
+"""
+
+
+def upgrade() -> None:
+    op.execute(SQL)
+
+
+def downgrade() -> None:
+    raise NotImplementedError("The baseline cannot be downgraded")

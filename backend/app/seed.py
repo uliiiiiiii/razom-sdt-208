@@ -1,8 +1,7 @@
 """Seed script: creates the first moderator (cannot self-register).
 
 Usage:
-    python -m app.seed
-or  python -m app.seed --email admin@razom.local --password secret --name Admin
+    python -m app.seed --email admin@razom.local --password <at least 8 chars> [--name Admin]
 """
 from __future__ import annotations
 
@@ -41,10 +40,13 @@ def seed_moderator(email: str, password: str, name: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed the first Razom moderator")
-    parser.add_argument("--email", default="admin@razom.local")
-    parser.add_argument("--password", default="admin123")
-    parser.add_argument("--name", default="Admin")
+    parser.add_argument("--email", required=True)
+    # no default: a well-known moderator password would hand over the platform
+    parser.add_argument("--password", required=True)
+    parser.add_argument("--name", default="Moderator")
     args = parser.parse_args()
+    if len(args.password) < 8:
+        parser.error("--password must be at least 8 characters")
     seed_moderator(args.email.lower(), args.password, args.name)
     return 0
 

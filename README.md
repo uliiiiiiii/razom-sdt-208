@@ -13,13 +13,13 @@ This repository contains the **Alpha prototype** (Stage 2). See [`Alpha Version 
 
 ### Prerequisites
 - Docker (for PostgreSQL+PostGIS) **or** a local Postgres with the `postgis` extension
-- Python 3.11+
+- Python 3.12
 
 ### 1. Start the database
 ```bash
 docker compose up -d db
 ```
-This runs `postgis/postgis:16-3.4` and applies `db/init.sql` automatically.
+This runs `postgis/postgis:16-3.4` on host port **5433** (so it doesn't clash with a locally installed PostgreSQL). The schema is created by Alembic when the backend starts.
 
 ### 2. Run the backend (it also serves the frontend)
 ```bash
@@ -27,15 +27,24 @@ cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-export DATABASE_URL="postgresql+psycopg2://razom:razom@localhost:5432/razom"
-export JWT_SECRET="dev-secret-change-me"
+export DATABASE_URL="postgresql+psycopg2://razom:razom@localhost:5433/razom"
+# required, at least 32 characters; the app refuses to start without it
+export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Seed the first moderator (optional, for later moderation features)
+### 3. Seed the first moderator
 ```bash
-python -m app.seed --email admin@razom.local --password admin123
+python -m app.seed --email admin@razom.local --password <at-least-8-chars>
 ```
+
+### Tests
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+Tests use a separate database `razom_test` on the same server (created automatically).
 
 ### 4. Open the app
 Visit **http://localhost:8000/index.html**
