@@ -93,6 +93,36 @@ def make_moderator(client) -> dict:
     return user
 
 
+def make_org(client, approved: bool = True) -> dict:
+    """Organization user; adds "org_id". Approval is set directly in the DB."""
+    user = make_user(client, "organization", org_name=f"Shelter {_counter['n'] + 1}")
+    with engine.begin() as conn:
+        user["org_id"] = conn.scalar(
+            text("SELECT id FROM organizations WHERE user_id = :u"), {"u": user["id"]}
+        )
+        if approved:
+            conn.execute(
+                text("UPDATE organizations SET verification_status = 'approved' WHERE id = :o"),
+                {"o": user["org_id"]},
+            )
+    return user
+
+
+def new_opportunity(client, org: dict, **overrides):
+    from datetime import datetime, timedelta, timezone
+
+    body = {
+        "title": "Dog walking",
+        "category": "pets",
+        "description": "Walk shelter dogs",
+        "latitude": 50.46,
+        "longitude": 30.51,
+        "start_time": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "slots_total": 2,
+    } | overrides
+    return client.post("/api/opportunities", json=body, headers=org["h"])
+
+
 def _login(client, email: str, user_id: int) -> dict:
     r = client.post("/api/auth/login", json={"email": email, "password": "secret12"})
     assert r.status_code == 200, r.text

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import User
+from ..models import Organization, User
 from ..schemas import TokenResponse, UserLogin, UserOut, UserRegister
 from ..security import create_access_token, hash_password, verify_password
 
@@ -32,6 +32,10 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
         is_organization=payload.is_organization,
     )
     db.add(user)
+    db.flush()
+    if payload.is_organization:
+        # publishing is blocked until a moderator approves this profile
+        db.add(Organization(user_id=user.id, org_name=payload.org_name))
     db.commit()
     db.refresh(user)
     return user

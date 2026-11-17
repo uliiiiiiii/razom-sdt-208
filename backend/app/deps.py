@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import User
+from .models import Organization, User
 from .security import decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
@@ -50,3 +50,20 @@ def require_roles(*roles: str):
         return user
 
     return _checker
+
+
+def get_my_organization(
+    user: User = Depends(require_roles("organization")),
+    db: Session = Depends(get_db),
+) -> Organization:
+    org = db.scalar(select(Organization).where(Organization.user_id == user.id))
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization profile not found")
+    return org
+
+
+def require_verified_org(org: Organization = Depends(get_my_organization)) -> Organization:
+    """Organizations can publish only after a moderator approved them (FR 4)."""
+    if org.verification_status != "approved":
+        raise HTTPException(status_code=403, detail="Organization is not verified yet")
+    return org

@@ -6,10 +6,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import require_roles
-from ..models import HelpRequest, User
+from ..deps import get_my_organization, require_roles
+from ..models import (
+    HelpRequest,
+    Opportunity,
+    OpportunitySignup,
+    Organization,
+    User,
+    VerificationLog,
+)
 from ..privacy import serialize_request
-from ..schemas import RequestOut
+from ..schemas import MySignupOut, OpportunityOut, OrganizationMe, RequestOut
+from .opportunities import serialize_opportunity
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -36,3 +44,61 @@ def my_claims(
         .order_by(HelpRequest.updated_at.desc())
     )
     return [serialize_request(db, r, user) for r in rows]
+
+
+@router.get("/organization", response_model=OrganizationMe)
+def my_organization(
+    db: Session = Depends(get_db), org: Organization = Depends(get_my_organization)
+) -> dict:
+    comment = db.scalar(
+        select(VerificationLog.comment)
+        .where(VerificationLog.organization_id == org.id)
+        .order_by(VerificationLog.created_at.desc(), VerificationLog.id.desc())
+        .limit(1)
+    )
+    return {
+        "id": org.id,
+        "org_name": org.org_name,
+        "verification_status": org.verification_status,
+        "comment": comment,
+    }
+
+
+@router.get("/opportunities", response_model=list[OpportunityOut])
+def my_opportunities(
+    db: Session = Depends(get_db), org: Organization = Depends(get_my_organization)
+) -> list[dict]:
+    rows = db.scalars(
+        select(Opportunity)
+        .where(Opportunity.organization_id == org.id)
+        .order_by(Opportunity.start_time.desc())
+    )
+    return [serialize_opportunity(db, o, org.user_id) for o in rows]
+
+
+@router.get("/signups", response_model=list[MySignupOut])
+def my_signups(
+    db: Session = Depends(get_db), user: User = Depends(require_roles("volunteer"))
+) -> list[dict]:
+    rows = db.execute(
+        select(OpportunitySignup, Opportunity, Organization)
+        .join(Opportunity, Opportunity.id == OpportunitySignup.opportunity_id)
+        .join(Organization, Organization.id == Opportunity.organization_id)
+        .where(OpportunitySignup.volunteer_id == user.id)
+        .order_by(Opportunity.start_time.desc())
+    ).all()
+    return [
+        {
+            "id": s.id,
+            "opportunity": {
+                "id": o.id,
+                "title": o.title,
+                "start_time": o.start_time,
+                "status": o.status,
+                "organization": {"id": org.id, "org_name": org.org_name},
+            },
+            "signed_up_at": s.signed_up_at,
+            "attended": s.attended,
+        }
+        for s, o, org in rows
+    ]
