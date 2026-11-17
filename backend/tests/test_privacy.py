@@ -137,7 +137,7 @@ def test_no_author_id_in_responses(client):
     for body in (get(client, vol, rid).json(), get(client, res, rid).json()):
         assert "author_id" not in body and "claimed_by" not in body
     items = client.get(
-        "/api/requests/map", params={"lat": 50.45, "lng": 30.52}, headers=vol["h"]
+        "/api/map", params={"lat": 50.45, "lng": 30.52, "type": "request"}, headers=vol["h"]
     ).json()
     assert all("author_id" not in i for i in items)
 

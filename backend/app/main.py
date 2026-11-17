@@ -16,7 +16,7 @@ from .config import settings
 from .database import SessionLocal
 from .migrate import upgrade_to_head
 from .retention import purge_closed_addresses
-from .routers import auth, me, opportunities, requests
+from .routers import auth, map, me, opportunities, requests
 
 
 @asynccontextmanager
@@ -49,6 +49,7 @@ api.include_router(auth.router)
 api.include_router(requests.router)
 api.include_router(me.router)
 api.include_router(opportunities.router)
+api.include_router(map.router)
 app.include_router(api)
 
 # Serve the frontend as static files when present, so the whole app can run

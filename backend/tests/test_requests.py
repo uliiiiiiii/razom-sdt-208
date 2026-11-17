@@ -26,7 +26,7 @@ def test_map_shows_approx_without_address(client):
     res, vol = make_user(client, "resident"), make_user(client, "volunteer")
     rid = new_request(client, res).json()["id"]
     items = client.get(
-        "/api/requests/map", params={"lat": 50.45, "lng": 30.52}, headers=vol["h"]
+        "/api/map", params={"lat": 50.45, "lng": 30.52, "type": "request"}, headers=vol["h"]
     ).json()
     item = next(i for i in items if i["id"] == rid)
     assert (item["latitude"], item["longitude"]) != (50.4501, 30.5234)

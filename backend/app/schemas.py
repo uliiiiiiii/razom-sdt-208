@@ -79,16 +79,18 @@ class RequestCreate(BaseModel):
     address: str | None = None
 
 
-class RequestMapItem(BaseModel):
-    """Public map marker — approximate location only, no address."""
+class MapItem(BaseModel):
+    """Map marker. Requests carry their APPROXIMATE point and never an address."""
 
+    type: Literal["request", "opportunity"]
     id: int
     category: str
     title: str | None
-    status: str
     latitude: float
     longitude: float
-    distance_m: float | None = None
+    distance_m: float
+    start_time: datetime | None = None  # opportunities only
+    slots_left: int | None = None  # opportunities only
 
 
 class ClaimerInfo(BaseModel):

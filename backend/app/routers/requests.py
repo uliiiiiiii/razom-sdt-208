@@ -11,16 +11,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user, require_roles
-from ..geo import lat_expr, lng_expr, point_wkt, round_location
+from ..geo import point_wkt, round_location
 from ..models import ClaimHistory, HelpRequest, User
 from ..privacy import serialize_request, visible_to
-from ..schemas import RequestCreate, RequestMapItem, RequestOut
+from ..schemas import RequestCreate, RequestOut
 
 router = APIRouter(prefix="/requests", tags=["help-requests"])
 
@@ -78,48 +78,6 @@ def create_request(
     db.commit()
     db.refresh(request)
     return serialize_request(db, request, user)
-
-
-@router.get("/map", response_model=list[RequestMapItem])
-def search_map(
-    lat: float = Query(..., ge=-90, le=90),
-    lng: float = Query(..., ge=-180, le=180),
-    radius: int = Query(2000, gt=0, le=200000),
-    category: str | None = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> list[dict]:
-    """Radius search using PostGIS. Returns APPROXIMATE locations only."""
-    point = point_wkt(lat, lng)
-    stmt = (
-        select(
-            HelpRequest.id,
-            HelpRequest.category,
-            HelpRequest.title,
-            HelpRequest.status,
-            lat_expr(HelpRequest.approx_location).label("lat"),
-            lng_expr(HelpRequest.approx_location).label("lng"),
-            func.ST_Distance(HelpRequest.approx_location, point).label("dist"),
-        )
-        .where(HelpRequest.status == "open")
-        .where(func.ST_DWithin(HelpRequest.approx_location, point, radius))
-    )
-    if category:
-        stmt = stmt.where(HelpRequest.category == category)
-    stmt = stmt.order_by(text("dist"))
-    rows = db.execute(stmt).all()
-    return [
-        {
-            "id": r.id,
-            "category": r.category,
-            "title": r.title,
-            "status": r.status,
-            "latitude": r.lat,
-            "longitude": r.lng,
-            "distance_m": round(r.dist, 1) if r.dist is not None else None,
-        }
-        for r in rows
-    ]
 
 
 @router.get("/{request_id}", response_model=RequestOut)
