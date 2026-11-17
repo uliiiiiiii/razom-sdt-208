@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+
+# lowercased so A@x.com and a@x.com are the same account
+Email = Annotated[EmailStr, AfterValidator(str.lower)]
 
 
 class UserRegister(BaseModel):
-    email: EmailStr
+    email: Email
     password: str = Field(min_length=6)
     display_name: str = Field(min_length=1, max_length=100)
     phone: str | None = None
@@ -17,7 +21,7 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: Email
     password: str
 
 
@@ -37,7 +41,11 @@ class UserOut(BaseModel):
 
 
 class RequestCreate(BaseModel):
-    category: str
+    # strip whitespace so a blank description fails min_length
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # must match the CHECK constraint on help_requests.category in db/init.sql
+    category: Literal["charging", "groceries", "medicine", "water", "transport", "pets", "other"]
     description: str = Field(min_length=1)
     title: str | None = None
     latitude: float = Field(ge=-90, le=90)
