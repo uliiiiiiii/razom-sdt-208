@@ -14,7 +14,6 @@ class UserRegister(BaseModel):
     email: Email
     password: str = Field(min_length=6)
     display_name: str = Field(min_length=1, max_length=100)
-    phone: str | None = None
     is_resident: bool = False
     is_volunteer: bool = False
     is_organization: bool = False

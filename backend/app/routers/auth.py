@@ -27,7 +27,6 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
         email=payload.email,
         password_hash=hash_password(payload.password),
         display_name=payload.display_name,
-        phone=payload.phone,
         is_resident=payload.is_resident,
         is_volunteer=payload.is_volunteer,
         is_organization=payload.is_organization,
