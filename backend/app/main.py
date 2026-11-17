@@ -8,13 +8,15 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
 
 from .config import settings
 from .database import SessionLocal
 from .migrate import upgrade_to_head
+from .ratelimit import limiter, rate_limit_exceeded
 from .retention import purge_closed_addresses
 from .routers import auth, map, me, moderation, opportunities, reports, requests
 
@@ -28,6 +30,26 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Razom API", version="0.2.0-beta", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded)
+
+# Same-origin only: scripts, styles and API calls from this server; map tiles
+# from OpenStreetMap. Limits the damage any XSS bug could do with the token.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' data: https://*.tile.openstreetmap.org; "
+    "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
 
 if settings.cors_origins:
     app.add_middleware(

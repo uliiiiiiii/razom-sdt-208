@@ -15,6 +15,7 @@ class Settings:
     jwt_expire_minutes: int = 60 * 24
     cors_origins: tuple[str, ...] = ()
     bcrypt_rounds: int = 12
+    rate_limit_enabled: bool = True
 
 
 def get_settings() -> Settings:
@@ -35,6 +36,7 @@ def get_settings() -> Settings:
         cors_origins=tuple(o.strip() for o in cors.split(",") if o.strip()),
         # lower only in tests, to keep the suite fast
         bcrypt_rounds=int(os.getenv("BCRYPT_ROUNDS", "12")),
+        rate_limit_enabled=os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false",
     )
 
 

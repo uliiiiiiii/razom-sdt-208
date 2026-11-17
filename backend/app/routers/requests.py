@@ -7,11 +7,10 @@ open|claimed --cancel--> cancelled
 
 Who sees the exact address is decided in app/privacy.py.
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
@@ -20,6 +19,7 @@ from ..deps import get_current_user, require_roles
 from ..geo import point_wkt, round_location
 from ..models import ClaimHistory, HelpRequest, User
 from ..privacy import serialize_request, visible_to
+from ..ratelimit import CREATE_REQUEST_LIMIT, limiter
 from ..schemas import RequestCreate, RequestOut
 
 router = APIRouter(prefix="/requests", tags=["help-requests"])
@@ -46,7 +46,9 @@ TRANSITIONS: dict[str, tuple[set[str], str]] = {
 
 
 @router.post("", response_model=RequestOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit(CREATE_REQUEST_LIMIT)
 def create_request(
+    request: Request,
     payload: RequestCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("resident")),
@@ -64,7 +66,7 @@ def create_request(
         )
 
     approx_lat, approx_lng = round_location(payload.latitude, payload.longitude)
-    request = HelpRequest(
+    help_request = HelpRequest(
         author_id=user.id,
         category=payload.category,
         title=payload.title,
@@ -74,10 +76,10 @@ def create_request(
         approx_location=point_wkt(approx_lat, approx_lng),
         address=payload.address,
     )
-    db.add(request)
+    db.add(help_request)
     db.commit()
-    db.refresh(request)
-    return serialize_request(db, request, user)
+    db.refresh(help_request)
+    return serialize_request(db, help_request, user)
 
 
 @router.get("/{request_id}", response_model=RequestOut)
