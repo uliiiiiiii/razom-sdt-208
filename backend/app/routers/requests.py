@@ -1,34 +1,42 @@
-"""Help-requests router — the core Alpha scenario.
+"""Help-requests router: the request lifecycle state machine.
 
-Implements the request lifecycle state machine and privacy-by-role rules:
-  register -> login -> create request -> claim on map -> complete -> confirm
+open --claim--> claimed --accept (resident)--> claimed+accepted --complete--> completed
+completed --confirm--> confirmed | completed --reopen--> open
+claimed --release (volunteer) / decline (resident, before accept)--> open
+open|claimed --cancel--> cancelled
+
+Who sees the exact address is decided in app/privacy.py.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from geoalchemy2 import Geometry
-from geoalchemy2.elements import WKTElement
-from sqlalchemy import cast, func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import get_current_user
-from ..geo import round_location
-from ..models import HelpRequest, User
+from ..deps import get_current_user, require_roles
+from ..geo import lat_expr, lng_expr, point_wkt, round_location
+from ..models import ClaimHistory, HelpRequest, User
+from ..privacy import serialize_request, visible_to
 from ..schemas import RequestCreate, RequestMapItem, RequestOut
 
 router = APIRouter(prefix="/requests", tags=["help-requests"])
 
 MAX_ACTIVE_PER_RESIDENT = 3
 MAX_CLAIMS_PER_VOLUNTEER = 2
+MAX_CLAIMS_PER_DAY = 5  # claim -> release loops would otherwise harvest addresses
+
+NOT_FOUND = "Request not found"
 
 # Allowed transitions per action: action -> (allowed from-states, to-state).
 # Keyed by action, not just by state, so e.g. 'reopen' can't be used to
 # kick a volunteer off a claimed request. 'claim' (open -> claimed) is an
 # atomic UPDATE in claim_request.
 TRANSITIONS: dict[str, tuple[set[str], str]] = {
+    "accept": ({"claimed"}, "claimed"),
+    "decline": ({"claimed"}, "open"),
     "release": ({"claimed"}, "open"),
     "complete": ({"claimed"}, "completed"),
     "confirm": ({"completed"}, "confirmed"),
@@ -37,29 +45,12 @@ TRANSITIONS: dict[str, tuple[set[str], str]] = {
 }
 
 
-def _point_wkt(latitude: float, longitude: float) -> WKTElement:
-    return WKTElement(f"POINT({longitude} {latitude})", srid=4326)
-
-
-def _lat_expr(col) -> object:
-    # ST_Y/ST_X require geometry, not geography -> cast.
-    return func.ST_Y(cast(col, Geometry(srid=4326)))
-
-
-def _lng_expr(col) -> object:
-    return func.ST_X(cast(col, Geometry(srid=4326)))
-
-
-
 @router.post("", response_model=RequestOut, status_code=status.HTTP_201_CREATED)
 def create_request(
     payload: RequestCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> HelpRequest:
-    if not user.is_resident:
-        raise HTTPException(403, detail="Only residents can create help requests")
-
+    user: User = Depends(require_roles("resident")),
+) -> dict:
     _lock_user(db, user)
     active = db.scalar(
         select(func.count(HelpRequest.id)).where(
@@ -79,14 +70,14 @@ def create_request(
         title=payload.title,
         description=payload.description,
         status="open",
-        location=_point_wkt(payload.latitude, payload.longitude),
-        approx_location=_point_wkt(approx_lat, approx_lng),
+        location=point_wkt(payload.latitude, payload.longitude),
+        approx_location=point_wkt(approx_lat, approx_lng),
         address=payload.address,
     )
     db.add(request)
     db.commit()
     db.refresh(request)
-    return _serialize(request, user, db)
+    return serialize_request(db, request, user)
 
 
 @router.get("/map", response_model=list[RequestMapItem])
@@ -99,15 +90,15 @@ def search_map(
     user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Radius search using PostGIS. Returns APPROXIMATE locations only."""
-    point = _point_wkt(lat, lng)
+    point = point_wkt(lat, lng)
     stmt = (
         select(
             HelpRequest.id,
             HelpRequest.category,
             HelpRequest.title,
             HelpRequest.status,
-            _lat_expr(HelpRequest.approx_location).label("lat"),
-            _lng_expr(HelpRequest.approx_location).label("lng"),
+            lat_expr(HelpRequest.approx_location).label("lat"),
+            lng_expr(HelpRequest.approx_location).label("lng"),
             func.ST_Distance(HelpRequest.approx_location, point).label("dist"),
         )
         .where(HelpRequest.status == "open")
@@ -136,22 +127,16 @@ def get_request(
     request_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> HelpRequest:
-    request = db.get(HelpRequest, request_id)
-    if not request:
-        raise HTTPException(404, detail="Request not found")
-    return _serialize(request, user, db)
+) -> dict:
+    return serialize_request(db, _get_visible(db, request_id, user), user)
 
 
 @router.patch("/{request_id}/claim", response_model=RequestOut)
 def claim_request(
     request_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> HelpRequest:
-    if not user.is_volunteer:
-        raise HTTPException(403, detail="Only volunteers can claim requests")
-
+    user: User = Depends(require_roles("volunteer")),
+) -> dict:
     _lock_user(db, user)
     active_claims = db.scalar(
         select(func.count(HelpRequest.id)).where(
@@ -164,30 +149,78 @@ def claim_request(
             409,
             detail=f"A volunteer cannot hold more than {MAX_CLAIMS_PER_VOLUNTEER} claimed requests",
         )
+    claims_today = db.scalar(
+        select(func.count(ClaimHistory.id)).where(
+            ClaimHistory.volunteer_id == user.id,
+            ClaimHistory.claimed_at > func.now() - text("interval '24 hours'"),
+        )
+    ) or 0
+    if claims_today >= MAX_CLAIMS_PER_DAY:
+        raise HTTPException(
+            409, detail=f"A volunteer cannot claim more than {MAX_CLAIMS_PER_DAY} requests in 24 hours"
+        )
+    declined = db.scalar(
+        select(ClaimHistory.id).where(
+            ClaimHistory.request_id == request_id,
+            ClaimHistory.volunteer_id == user.id,
+            ClaimHistory.outcome == "declined",
+        )
+    )
+    if declined:
+        raise HTTPException(409, detail="The resident declined your help with this request")
 
     # Atomic, concurrency-safe claim: only succeeds if the row is still 'open'.
     result = db.execute(
         text(
             "UPDATE help_requests "
             "SET status = 'claimed', claimed_by = :uid, claimed_at = now(), updated_at = now() "
-            "WHERE id = :rid AND status = 'open' AND author_id <> :uid "
+            "WHERE id = :rid AND status = 'open' AND NOT is_hidden AND author_id <> :uid "
             "RETURNING id"
         ),
         {"uid": user.id, "rid": request_id},
     )
-    row = result.first()
-    if row is None:
+    if result.first() is None:
+        db.rollback()
         request = db.get(HelpRequest, request_id)
-        if not request:
-            raise HTTPException(404, detail="Request not found")
+        if not request or request.is_hidden or request.author.is_blocked:
+            raise HTTPException(404, detail=NOT_FOUND)
         if request.author_id == user.id:
             raise HTTPException(409, detail="You cannot claim your own request")
-        if request.status != "open":
-            raise HTTPException(409, detail=f"Request is not open (current status: {request.status})")
-        raise HTTPException(409, detail="Request was just claimed by someone else")
+        # e.g. lost a race with another volunteer; the status isn't disclosed
+        raise HTTPException(409, detail="Request is no longer open")
+    db.add(ClaimHistory(request_id=request_id, volunteer_id=user.id))
     db.commit()
-    request = db.get(HelpRequest, request_id)
-    return _serialize(request, user, db)
+    return serialize_request(db, db.get(HelpRequest, request_id), user)
+
+
+@router.patch("/{request_id}/accept", response_model=RequestOut)
+def accept_volunteer(
+    request_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Resident accepts the claiming volunteer; only now is the address revealed to them."""
+    request = _get_own(db, request_id, user, "accept the volunteer for")
+    if request.accepted_at is not None:
+        raise HTTPException(409, detail="The volunteer is already accepted")
+    _transition(request, "accept")
+    request.accepted_at = _now()
+    return _save(db, request, user)
+
+
+@router.patch("/{request_id}/decline", response_model=RequestOut)
+def decline_volunteer(
+    request_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Resident declines the claiming volunteer; they can't claim this request again."""
+    request = _get_own(db, request_id, user, "decline the volunteer for")
+    if request.accepted_at is not None:
+        raise HTTPException(409, detail="The volunteer is already accepted; cancel the request instead")
+    _transition(request, "decline")
+    _end_claim(db, request, "declined")
+    return _save(db, request, user)
 
 
 @router.patch("/{request_id}/release", response_model=RequestOut)
@@ -195,19 +228,11 @@ def release_request(
     request_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> HelpRequest:
-    request = db.get(HelpRequest, request_id)
-    if not request:
-        raise HTTPException(404, detail="Request not found")
-    if request.claimed_by != user.id:
-        raise HTTPException(403, detail="Only the volunteer who claimed this request can release it")
+) -> dict:
+    request = _get_claimed_by_me(db, request_id, user, "release")
     _transition(request, "release")
-    request.claimed_by = None
-    request.claimed_at = None
-    request.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(request)
-    return _serialize(request, user, db)
+    _end_claim(db, request, "released")
+    return _save(db, request, user)
 
 
 @router.patch("/{request_id}/complete", response_model=RequestOut)
@@ -215,18 +240,13 @@ def complete_request(
     request_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> HelpRequest:
-    request = db.get(HelpRequest, request_id)
-    if not request:
-        raise HTTPException(404, detail="Request not found")
-    if request.claimed_by != user.id:
-        raise HTTPException(403, detail="Only the volunteer who claimed this request can complete it")
+) -> dict:
+    request = _get_claimed_by_me(db, request_id, user, "complete")
+    if request.status == "claimed" and request.accepted_at is None:
+        raise HTTPException(409, detail="The resident has not accepted your help yet")
     _transition(request, "complete")
-    request.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(request)
-    return _serialize(request, user, db)
-
+    _mark_claim(db, request, "active", "completed")
+    return _save(db, request, user)
 
 
 @router.patch("/{request_id}/confirm", response_model=RequestOut)
@@ -234,17 +254,11 @@ def confirm_request(
     request_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> HelpRequest:
-    request = db.get(HelpRequest, request_id)
-    if not request:
-        raise HTTPException(404, detail="Request not found")
-    if request.author_id != user.id:
-        raise HTTPException(403, detail="Only the resident who created this request can confirm it")
+) -> dict:
+    request = _get_own(db, request_id, user, "confirm")
     _transition(request, "confirm")
-    request.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(request)
-    return _serialize(request, user, db)
+    request.closed_at = _now()
+    return _save(db, request, user)
 
 
 @router.patch("/{request_id}/reopen", response_model=RequestOut)
@@ -252,20 +266,13 @@ def reopen_request(
     request_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> HelpRequest:
+) -> dict:
     """Resident marks a 'completed' request as not resolved -> back to 'open'."""
-    request = db.get(HelpRequest, request_id)
-    if not request:
-        raise HTTPException(404, detail="Request not found")
-    if request.author_id != user.id:
-        raise HTTPException(403, detail="Only the resident who created this request can reopen it")
+    request = _get_own(db, request_id, user, "reopen")
     _transition(request, "reopen")
-    request.claimed_by = None
-    request.claimed_at = None
-    request.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(request)
-    return _serialize(request, user, db)
+    _mark_claim(db, request, "completed", "reopened")
+    _clear_claim(request)
+    return _save(db, request, user)
 
 
 @router.patch("/{request_id}/cancel", response_model=RequestOut)
@@ -273,28 +280,47 @@ def cancel_request(
     request_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> HelpRequest:
-    request = db.get(HelpRequest, request_id)
-    if not request:
-        raise HTTPException(404, detail="Request not found")
-    if request.author_id != user.id:
-        raise HTTPException(403, detail="Only the resident who created this request can cancel it")
+) -> dict:
+    request = _get_own(db, request_id, user, "cancel")
     _transition(request, "cancel")
-    request.claimed_by = None
-    request.claimed_at = None
-    request.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(request)
-    return _serialize(request, user, db)
+    if request.claimed_by is not None:
+        _end_claim(db, request, "cancelled")
+    request.closed_at = _now()
+    return _save(db, request, user)
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _lock_user(db: Session, user: User) -> None:
     """Lock the user's row until commit so concurrent requests from the same
     user can't all pass a count-based limit check at once."""
     db.execute(select(User.id).where(User.id == user.id).with_for_update())
+
+
+def _get_visible(db: Session, request_id: int, user: User) -> HelpRequest:
+    request = db.get(HelpRequest, request_id)
+    if not request or not visible_to(request, user):
+        raise HTTPException(404, detail=NOT_FOUND)
+    return request
+
+
+def _get_own(db: Session, request_id: int, user: User, verb: str) -> HelpRequest:
+    request = _get_visible(db, request_id, user)
+    if request.author_id != user.id:
+        raise HTTPException(403, detail=f"Only the resident who created this request can {verb} it")
+    return request
+
+
+def _get_claimed_by_me(db: Session, request_id: int, user: User, verb: str) -> HelpRequest:
+    request = _get_visible(db, request_id, user)
+    if request.claimed_by != user.id:
+        raise HTTPException(403, detail=f"Only the volunteer who claimed this request can {verb} it")
+    return request
 
 
 def _transition(request: HelpRequest, action: str) -> None:
@@ -307,37 +333,31 @@ def _transition(request: HelpRequest, action: str) -> None:
     request.status = target
 
 
-def _serialize(request: HelpRequest, viewer: User, db: Session) -> dict:
-    """Apply privacy-by-role filtering before returning a request to the client."""
-    is_author = request.author_id == viewer.id
-    is_claimer = request.claimed_by == viewer.id
-    # Moderators get the exact address only via report review (not built yet),
-    # never through the regular endpoints.
-    reveal_exact = is_author or is_claimer
+def _mark_claim(db: Session, request: HelpRequest, from_outcome: str, to_outcome: str) -> None:
+    db.execute(
+        update(ClaimHistory)
+        .where(
+            ClaimHistory.request_id == request.id,
+            ClaimHistory.volunteer_id == request.claimed_by,
+            ClaimHistory.outcome == from_outcome,
+        )
+        .values(outcome=to_outcome)
+    )
 
-    geom_col = HelpRequest.location if reveal_exact else HelpRequest.approx_location
-    coords = db.execute(
-        select(
-            _lat_expr(geom_col).label("lat"),
-            _lng_expr(geom_col).label("lng"),
-        ).where(HelpRequest.id == request.id)
-    ).first()
 
-    lat, lng = (coords.lat, coords.lng) if coords else (None, None)
+def _clear_claim(request: HelpRequest) -> None:
+    request.claimed_by = None
+    request.claimed_at = None
+    request.accepted_at = None
 
-    return {
-        "id": request.id,
-        "category": request.category,
-        "title": request.title,
-        "description": request.description,
-        "status": request.status,
-        "author_id": request.author_id,
-        "latitude": lat,
-        "longitude": lng,
-        "address": request.address if reveal_exact else None,
-        "claimed_by": request.claimed_by if reveal_exact else None,
-        "claimed_at": request.claimed_at if reveal_exact else None,
-        "created_at": request.created_at,
-        "exact_location": reveal_exact,
-    }
 
+def _end_claim(db: Session, request: HelpRequest, outcome: str) -> None:
+    _mark_claim(db, request, "active", outcome)
+    _clear_claim(request)
+
+
+def _save(db: Session, request: HelpRequest, user: User) -> dict:
+    request.updated_at = _now()
+    db.commit()
+    db.refresh(request)
+    return serialize_request(db, request, user)

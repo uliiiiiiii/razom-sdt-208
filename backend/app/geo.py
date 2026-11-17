@@ -1,7 +1,9 @@
 """Geospatial helpers built on PostGIS."""
 from __future__ import annotations
 
-import math
+from geoalchemy2 import Geometry
+from geoalchemy2.elements import WKTElement
+from sqlalchemy import cast, func
 
 
 def round_location(latitude: float, longitude: float, radius_m: int = 300) -> tuple[float, float]:
@@ -15,3 +17,16 @@ def round_location(latitude: float, longitude: float, radius_m: int = 300) -> tu
         round(latitude / step) * step,
         round(longitude / step) * step,
     )
+
+
+def point_wkt(latitude: float, longitude: float) -> WKTElement:
+    return WKTElement(f"POINT({longitude} {latitude})", srid=4326)
+
+
+def lat_expr(col):
+    # ST_Y/ST_X require geometry, not geography -> cast.
+    return func.ST_Y(cast(col, Geometry(srid=4326)))
+
+
+def lng_expr(col):
+    return func.ST_X(cast(col, Geometry(srid=4326)))

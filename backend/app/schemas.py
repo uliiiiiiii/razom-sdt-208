@@ -64,21 +64,31 @@ class RequestMapItem(BaseModel):
     distance_m: float | None = None
 
 
+class ClaimerInfo(BaseModel):
+    """What the resident sees about a volunteer before accepting them."""
+
+    display_name: str
+    confirmed_count: int
+
+
 class RequestOut(BaseModel):
+    # no author_id / claimed_by: user ids would let anyone link requests to a person
     id: int
     category: str
     title: str | None
     description: str
     status: str
-    author_id: int
     latitude: float | None = None
     longitude: float | None = None
     address: str | None = None
-    claimed_by: int | None = None
-    claimed_at: datetime | None = None
-    created_at: datetime
     # tells the client whether exact location/address were revealed
     exact_location: bool = False
+    is_mine: bool
+    is_claimer: bool
+    accepted: bool
+    claimer: ClaimerInfo | None = None  # only for the author
+    created_at: datetime
+    closed_at: datetime | None = None
 
 
 class MessageOut(BaseModel):

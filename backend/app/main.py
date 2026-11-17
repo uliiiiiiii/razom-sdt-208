@@ -13,13 +13,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
+from .database import SessionLocal
 from .migrate import upgrade_to_head
-from .routers import auth, requests
+from .retention import purge_closed_addresses
+from .routers import auth, me, requests
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     upgrade_to_head(settings.database_url)
+    with SessionLocal() as db:
+        purge_closed_addresses(db)
     yield
 
 
@@ -43,6 +47,7 @@ def health() -> dict:
 
 api.include_router(auth.router)
 api.include_router(requests.router)
+api.include_router(me.router)
 app.include_router(api)
 
 # Serve the frontend as static files when present, so the whole app can run
