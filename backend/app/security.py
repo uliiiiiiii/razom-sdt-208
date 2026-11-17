@@ -13,7 +13,7 @@ from .config import settings
 def hash_password(password: str) -> str:
     # bcrypt has a 72-byte limit; truncate to stay safe (matches common practice).
     raw = password.encode("utf-8")[:72]
-    return bcrypt.hashpw(raw, bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(raw, bcrypt.gensalt(rounds=settings.bcrypt_rounds)).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:

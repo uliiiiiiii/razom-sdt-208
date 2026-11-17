@@ -14,6 +14,7 @@ class Settings:
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24
     cors_origins: tuple[str, ...] = ()
+    bcrypt_rounds: int = 12
 
 
 def get_settings() -> Settings:
@@ -32,6 +33,8 @@ def get_settings() -> Settings:
         database_url=db_url,
         jwt_secret=secret,
         cors_origins=tuple(o.strip() for o in cors.split(",") if o.strip()),
+        # lower only in tests, to keep the suite fast
+        bcrypt_rounds=int(os.getenv("BCRYPT_ROUNDS", "12")),
     )
 
 

@@ -10,6 +10,7 @@ os.environ.setdefault(
 os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 os.environ["JWT_SECRET"] = "test-secret-" + "x" * 52
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+os.environ["BCRYPT_ROUNDS"] = "4"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

@@ -207,3 +207,73 @@ class MySignupOut(BaseModel):
 
 class AttendanceUpdate(BaseModel):
     attended: bool
+
+
+# ---------------------------------------------------------------------------
+# reports & moderation
+# ---------------------------------------------------------------------------
+TargetType = Literal["request", "opportunity", "user"]
+
+
+class ReportCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    target_type: TargetType
+    target_id: int
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class ReportCreated(BaseModel):
+    id: int
+    status: str
+
+
+class ReportOut(BaseModel):
+    id: int
+    target_type: str
+    target_id: int
+    reason: str
+    status: str
+    created_at: datetime
+    reporter: VolunteerRef
+    open_reports_on_target: int
+
+
+class ReportDetail(ReportOut):
+    # serialized request / opportunity / user; for a request with an open
+    # report this includes the exact address (and the access is logged)
+    target: dict | None
+
+
+class ReportDecision(BaseModel):
+    decision: Literal["dismiss", "hide", "block"]
+
+
+class OrgDecision(BaseModel):
+    decision: Literal["approved", "rejected"]
+    comment: str | None = Field(None, max_length=500)
+
+
+class OrganizationAdmin(BaseModel):
+    id: int
+    org_name: str
+    verification_status: str
+    created_at: datetime
+    user: UserOut
+
+
+class UserAdmin(UserOut):
+    is_blocked: bool
+    created_at: datetime
+
+
+class UserUpdate(BaseModel):
+    is_blocked: bool | None = None
+    is_moderator: bool | None = None
+
+
+class AccessLogEntry(BaseModel):
+    request_id: int
+    user: VolunteerRef
+    via: str
+    accessed_at: datetime
