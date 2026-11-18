@@ -10,7 +10,9 @@ import sys
 
 from sqlalchemy import select
 
+from .config import settings
 from .database import SessionLocal
+from .migrate import upgrade_to_head
 from .models import User
 from .security import hash_password
 
@@ -47,6 +49,7 @@ def main() -> int:
     args = parser.parse_args()
     if len(args.password) < 8:
         parser.error("--password must be at least 8 characters")
+    upgrade_to_head(settings.database_url)  # works even before the server ever ran
     seed_moderator(args.email.lower(), args.password, args.name)
     return 0
 

@@ -80,8 +80,11 @@ def seed_demo(db: Session) -> None:
 
 
 if __name__ == "__main__":
+    from .config import settings
     from .database import SessionLocal
+    from .migrate import upgrade_to_head
 
+    upgrade_to_head(settings.database_url)  # works even before the server ever ran
     with SessionLocal() as session:
         try:
             seed_demo(session)
