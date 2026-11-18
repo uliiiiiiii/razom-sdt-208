@@ -3,7 +3,7 @@ import pytest
 from sqlalchemy import text
 
 from app.database import engine
-from conftest import make_moderator, make_org, make_user, new_opportunity, new_request
+from conftest import claim_ref, make_moderator, make_org, make_user, new_opportunity, new_request
 
 CENTER = {"lat": 50.45, "lng": 30.52}
 
@@ -199,7 +199,7 @@ def test_access_log_listing(client):
     res, vol = make_user(client, "resident"), make_user(client, "volunteer")
     rid = new_request(client, res).json()["id"]
     client.patch(f"/api/requests/{rid}/claim", headers=vol["h"])
-    client.patch(f"/api/requests/{rid}/accept", headers=res["h"])
+    client.patch(f"/api/requests/{rid}/accept", headers=res["h"], json=claim_ref(client, res, rid))
     client.get(f"/api/requests/{rid}", headers=vol["h"])
     rows = client.get("/api/moderation/access-log", params={"request_id": rid}, headers=mod["h"]).json()
     assert rows and all(r["user"]["id"] == vol["id"] and r["via"] == "claim" for r in rows)
@@ -214,6 +214,10 @@ MODERATION_ROUTES = [
     ("get", "/api/moderation/users"),
     ("patch", "/api/moderation/users/1"),
     ("get", "/api/moderation/access-log"),
+    ("get", "/api/moderation/stats"),
+    ("get", "/api/moderation/organizations/1/stats"),
+    ("patch", "/api/moderation/requests/1"),
+    ("patch", "/api/moderation/opportunities/1"),
 ]
 
 

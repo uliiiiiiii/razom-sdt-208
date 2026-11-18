@@ -36,6 +36,8 @@ class User(Base):
     is_organization: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_moderator: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # blocked by the 3-reports rule (a dismissed report undoes only these)
+    auto_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -117,6 +119,7 @@ class HelpRequest(Base):
     # set on confirm/cancel; drives address retention
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    auto_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -143,6 +146,7 @@ class Opportunity(Base):
     slots_total: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(Text, default="open", nullable=False)
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    auto_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

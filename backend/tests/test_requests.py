@@ -1,11 +1,12 @@
 """Request lifecycle and limits (ported from the Alpha API probe)."""
 from concurrent.futures import ThreadPoolExecutor
 
-from conftest import make_user, new_request
+from conftest import claim_ref, make_user, new_request
 
 
 def act(client, user, rid, action):
-    return client.patch(f"/api/requests/{rid}/{action}", headers=user["h"])
+    body = claim_ref(client, user, rid) if action in ("accept", "decline") else None
+    return client.patch(f"/api/requests/{rid}/{action}", headers=user["h"], json=body)
 
 
 def full_cycle(client, res, vol, rid):

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..claims import expire_unaccepted_claims
 from ..database import get_db
 from ..deps import get_my_organization, require_roles
 from ..models import (
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/me", tags=["me"])
 def my_requests(
     db: Session = Depends(get_db), user: User = Depends(require_roles("resident"))
 ) -> list[dict]:
+    expire_unaccepted_claims(db)
     rows = db.scalars(
         select(HelpRequest)
         .where(HelpRequest.author_id == user.id)
@@ -39,6 +41,7 @@ def my_requests(
 def my_claims(
     db: Session = Depends(get_db), user: User = Depends(require_roles("volunteer"))
 ) -> list[dict]:
+    expire_unaccepted_claims(db)
     rows = db.scalars(
         select(HelpRequest)
         .where(HelpRequest.claimed_by == user.id)

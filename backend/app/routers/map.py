@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..claims import expire_unaccepted_claims
 from ..database import get_db
 from ..deps import get_current_user
 from ..geo import lat_expr, lng_expr, point_wkt
@@ -31,6 +32,7 @@ def search_map(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ) -> list[dict]:
+    expire_unaccepted_claims(db)
     point = point_wkt(lat, lng)
     items: list[dict] = []
     if kind in ("all", "request"):

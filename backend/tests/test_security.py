@@ -5,7 +5,8 @@ from app.ratelimit import limiter
 from conftest import make_user
 
 CSP = (
-    "default-src 'self'; img-src 'self' data: https://*.tile.openstreetmap.org; "
+    "default-src 'self'; "
+    "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
     "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; "
     "frame-ancestors 'none'"
 )
@@ -47,8 +48,13 @@ def test_register_rate_limit(client, rate_limited):
 def test_create_request_rate_limit(client, rate_limited):
     user = make_user(client, "resident")
     body = {"category": "water", "description": "x", "latitude": 50.45, "longitude": 30.52}
-    codes = [client.post("/api/requests", json=body, headers=user["h"]).status_code for _ in range(11)]
-    assert codes[-1] == 429
+    codes = []
+    for _ in range(11):  # cancel each one so the 3-active limit never triggers
+        r = client.post("/api/requests", json=body, headers=user["h"])
+        codes.append(r.status_code)
+        if r.status_code == 201:
+            client.patch(f"/api/requests/{r.json()['id']}/cancel", headers=user["h"])
+    assert codes == [201] * 10 + [429]
 
 
 def test_no_cors_by_default(client):

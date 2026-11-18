@@ -3,11 +3,12 @@ from sqlalchemy import text
 
 from app.database import engine
 from app.retention import purge_closed_addresses
-from conftest import make_user, new_request
+from conftest import claim_ref, make_user, new_request
 
 
 def act(client, user, rid, action):
-    return client.patch(f"/api/requests/{rid}/{action}", headers=user["h"])
+    body = claim_ref(client, user, rid) if action in ("accept", "decline") else None
+    return client.patch(f"/api/requests/{rid}/{action}", headers=user["h"], json=body)
 
 
 def get(client, user, rid):

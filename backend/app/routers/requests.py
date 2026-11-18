@@ -14,13 +14,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
+from ..claims import active_claim_id, expire_unaccepted_claims
 from ..database import get_db
 from ..deps import get_current_user, require_roles
 from ..geo import point_wkt, round_location
 from ..models import ClaimHistory, HelpRequest, User
 from ..privacy import serialize_request, visible_to
 from ..ratelimit import CREATE_REQUEST_LIMIT, limiter
-from ..schemas import RequestCreate, RequestOut
+from ..schemas import ClaimRef, RequestCreate, RequestOut
 
 router = APIRouter(prefix="/requests", tags=["help-requests"])
 
@@ -97,6 +98,7 @@ def claim_request(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("volunteer")),
 ) -> dict:
+    expire_unaccepted_claims(db)
     _lock_user(db, user)
     active_claims = db.scalar(
         select(func.count(HelpRequest.id)).where(
@@ -135,6 +137,7 @@ def claim_request(
             "UPDATE help_requests "
             "SET status = 'claimed', claimed_by = :uid, claimed_at = now(), updated_at = now() "
             "WHERE id = :rid AND status = 'open' AND NOT is_hidden AND author_id <> :uid "
+            "AND author_id NOT IN (SELECT id FROM users WHERE is_blocked) "
             "RETURNING id"
         ),
         {"uid": user.id, "rid": request_id},
@@ -156,11 +159,13 @@ def claim_request(
 @router.patch("/{request_id}/accept", response_model=RequestOut)
 def accept_volunteer(
     request_id: int,
+    payload: ClaimRef,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     """Resident accepts the claiming volunteer; only now is the address revealed to them."""
     request = _get_own(db, request_id, user, "accept the volunteer for")
+    _check_same_claim(db, request, payload.claim_id)
     if request.accepted_at is not None:
         raise HTTPException(409, detail="The volunteer is already accepted")
     _transition(request, "accept")
@@ -171,11 +176,13 @@ def accept_volunteer(
 @router.patch("/{request_id}/decline", response_model=RequestOut)
 def decline_volunteer(
     request_id: int,
+    payload: ClaimRef,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
     """Resident declines the claiming volunteer; they can't claim this request again."""
     request = _get_own(db, request_id, user, "decline the volunteer for")
+    _check_same_claim(db, request, payload.claim_id)
     if request.accepted_at is not None:
         raise HTTPException(409, detail="The volunteer is already accepted; cancel the request instead")
     _transition(request, "decline")
@@ -262,25 +269,34 @@ def _lock_user(db: Session, user: User) -> None:
     db.execute(select(User.id).where(User.id == user.id).with_for_update())
 
 
-def _get_visible(db: Session, request_id: int, user: User) -> HelpRequest:
-    request = db.get(HelpRequest, request_id)
+def _get_visible(db: Session, request_id: int, user: User, *, lock: bool = False) -> HelpRequest:
+    # lock=True for state changes: concurrent claim/release/accept/cancel on the
+    # same request then run one after another instead of interleaving
+    request = db.get(HelpRequest, request_id, with_for_update=lock)
     if not request or not visible_to(request, user):
         raise HTTPException(404, detail=NOT_FOUND)
     return request
 
 
 def _get_own(db: Session, request_id: int, user: User, verb: str) -> HelpRequest:
-    request = _get_visible(db, request_id, user)
+    request = _get_visible(db, request_id, user, lock=True)
     if request.author_id != user.id:
         raise HTTPException(403, detail=f"Only the resident who created this request can {verb} it")
     return request
 
 
 def _get_claimed_by_me(db: Session, request_id: int, user: User, verb: str) -> HelpRequest:
-    request = _get_visible(db, request_id, user)
+    request = _get_visible(db, request_id, user, lock=True)
     if request.claimed_by != user.id:
         raise HTTPException(403, detail=f"Only the volunteer who claimed this request can {verb} it")
     return request
+
+
+def _check_same_claim(db: Session, request: HelpRequest, claim_id: int) -> None:
+    if request.status != "claimed" or active_claim_id(db, request) != claim_id:
+        raise HTTPException(
+            409, detail="The volunteer for this request has changed; review them again"
+        )
 
 
 def _transition(request: HelpRequest, action: str) -> None:

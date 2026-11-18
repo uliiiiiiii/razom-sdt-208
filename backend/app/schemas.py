@@ -33,7 +33,7 @@ FutureDatetime = Annotated[AwareDatetime, AfterValidator(_in_future)]
 
 class UserRegister(BaseModel):
     email: Email
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(min_length=1, max_length=100)
     is_resident: bool = False
     is_volunteer: bool = False
@@ -72,11 +72,11 @@ class RequestCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     category: Category
-    description: str = Field(min_length=1)
-    title: str | None = None
+    description: str = Field(min_length=1, max_length=2000)
+    title: str | None = Field(None, max_length=120)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
-    address: str | None = None
+    address: str | None = Field(None, max_length=300)
 
 
 class MapItem(BaseModel):
@@ -93,9 +93,16 @@ class MapItem(BaseModel):
     slots_left: int | None = None  # opportunities only
 
 
+class ClaimRef(BaseModel):
+    """Body of accept/decline: the claim the resident is deciding on."""
+
+    claim_id: int
+
+
 class ClaimerInfo(BaseModel):
     """What the resident sees about a volunteer before accepting them."""
 
+    claim_id: int | None  # send back on accept/decline (None once the claim is over)
     display_name: str
     confirmed_count: int
 
@@ -115,6 +122,7 @@ class RequestOut(BaseModel):
     is_mine: bool
     is_claimer: bool
     accepted: bool
+    is_hidden: bool = False  # hidden by a moderator or by 3 reports
     claimer: ClaimerInfo | None = None  # only for the author
     created_at: datetime
     closed_at: datetime | None = None
@@ -142,7 +150,7 @@ class OpportunityCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     title: str = Field(min_length=1, max_length=120)
-    description: str | None = None
+    description: str | None = Field(None, max_length=2000)
     category: Category
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
@@ -154,7 +162,7 @@ class OpportunityUpdate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     title: str | None = Field(None, min_length=1, max_length=120)
-    description: str | None = None
+    description: str | None = Field(None, max_length=2000)
     category: Category | None = None
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
@@ -176,6 +184,7 @@ class OpportunityOut(BaseModel):
     status: str
     is_signed_up: bool
     is_owner: bool
+    is_hidden: bool = False
 
 
 class VolunteerRef(BaseModel):
@@ -297,3 +306,7 @@ class PlatformStats(BaseModel):
     active_users_30d: int
     pending_reports: int
     pending_organizations: int
+
+
+class VisibilityUpdate(BaseModel):
+    is_hidden: bool

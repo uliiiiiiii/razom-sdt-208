@@ -50,7 +50,7 @@ def get_opportunity(
     opp_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> dict:
     opp = db.get(Opportunity, opp_id)
-    if not opp or (opp.is_hidden and _owner_id(db, opp) != user.id):
+    if not opp or not opportunity_visible_to(db, opp, user.id):
         raise HTTPException(404, detail=NOT_FOUND)
     return serialize_opportunity(db, opp, user.id)
 
@@ -63,7 +63,8 @@ def update_opportunity(
     org: Organization = Depends(require_verified_org),
 ) -> dict:
     opp = _get_owned(db, opp_id, org)
-    changes = payload.model_dump(exclude_unset=True)
+    # null means "leave unchanged" (NOT NULL columns can't be cleared)
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
     if "slots_total" in changes and changes["slots_total"] < _slots_taken(db, opp.id):
         raise HTTPException(409, detail="slots_total cannot be lower than the number of sign-ups")
     lat, lng = changes.pop("latitude", None), changes.pop("longitude", None)
@@ -99,7 +100,7 @@ def sign_up(
 ) -> dict:
     # lock the opportunity so two volunteers can't both take the last slot
     opp = db.scalar(select(Opportunity).where(Opportunity.id == opp_id).with_for_update())
-    if not opp or opp.is_hidden:
+    if not opp or not opportunity_visible_to(db, opp, user.id):
         raise HTTPException(404, detail=NOT_FOUND)
     if opp.status != "open":
         raise HTTPException(409, detail="Opportunity is closed")
@@ -174,8 +175,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _owner_id(db: Session, opp: Opportunity) -> int:
-    return db.scalar(select(Organization.user_id).where(Organization.id == opp.organization_id))
+def opportunity_visible_to(db: Session, opp: Opportunity, viewer_id: int) -> bool:
+    """The owner always sees it; others only if it isn't hidden, the organization
+    is approved and its account isn't blocked (same rules as the map)."""
+    org = db.get(Organization, opp.organization_id)
+    if org.user_id == viewer_id:
+        return True
+    owner = db.get(User, org.user_id)
+    return not opp.is_hidden and org.verification_status == "approved" and not owner.is_blocked
 
 
 def _get_owned(db: Session, opp_id: int, org: Organization) -> Opportunity:
@@ -232,4 +239,5 @@ def serialize_opportunity(db: Session, opp: Opportunity, viewer_id: int) -> dict
         "status": opp.status,
         "is_signed_up": _find_signup(db, opp.id, viewer_id) is not None,
         "is_owner": org.user_id == viewer_id,
+        "is_hidden": opp.is_hidden,
     }

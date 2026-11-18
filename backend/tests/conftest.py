@@ -130,6 +130,12 @@ def _login(client, email: str, user_id: int) -> dict:
     return {"id": user_id, "email": email, "h": {"Authorization": f"Bearer {r.json()['access_token']}"}}
 
 
+def claim_ref(client, user: dict, rid: int) -> dict:
+    """Body for accept/decline: the claim the user (the author) currently sees."""
+    claimer = client.get(f"/api/requests/{rid}", headers=user["h"]).json().get("claimer")
+    return {"claim_id": claimer["claim_id"] if claimer else 0}
+
+
 def new_request(client, user: dict, **overrides):
     body = {
         "category": "water",

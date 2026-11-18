@@ -3,7 +3,8 @@
 Who may see what:
 - the author sees everything about their own request;
 - the claiming volunteer sees the exact location and address only after the
-  resident has accepted them, and only while the request is claimed/completed;
+  resident has accepted them, and only while the request is 'claimed' (once
+  they mark it completed they no longer need it);
 - a moderator sees them only through report review (caller passes
   via="report_review");
 - everyone else sees the approximate location and no address.
@@ -14,6 +15,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .claims import active_claim_id
 from .geo import lat_expr, lng_expr
 from .models import AddressAccess, HelpRequest, User
 
@@ -26,7 +28,7 @@ def can_see_exact(req: HelpRequest, viewer: User) -> bool:
     return (
         req.claimed_by == viewer.id
         and req.accepted_at is not None
-        and req.status in ACTIVE_CLAIM_STATUSES
+        and req.status == "claimed"
     )
 
 
@@ -66,6 +68,7 @@ def serialize_request(
     claimer = None
     if is_mine and req.claimed_by is not None and req.status in ACTIVE_CLAIM_STATUSES:
         claimer = {
+            "claim_id": active_claim_id(db, req),
             "display_name": req.claimer.display_name,
             "confirmed_count": _confirmed_count(db, req.claimed_by),
         }
@@ -83,6 +86,7 @@ def serialize_request(
         "is_mine": is_mine,
         "is_claimer": req.claimed_by == viewer.id,
         "accepted": req.accepted_at is not None,
+        "is_hidden": req.is_hidden,
         "claimer": claimer,
         "created_at": req.created_at,
         "closed_at": req.closed_at,

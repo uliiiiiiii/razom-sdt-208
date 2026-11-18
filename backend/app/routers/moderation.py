@@ -10,8 +10,17 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import require_roles
-from ..models import AddressAccess, HelpRequest, Organization, Report, User, VerificationLog
+from ..models import (
+    AddressAccess,
+    HelpRequest,
+    Opportunity,
+    Organization,
+    Report,
+    User,
+    VerificationLog,
+)
 from ..moderation_rules import (
+    hidden_automatically,
     load_target,
     open_report_count,
     owner_of,
@@ -28,6 +37,9 @@ from ..schemas import (
     ReportDecision,
     ReportDetail,
     ReportOut,
+    RequestOut,
+    OpportunityOut,
+    VisibilityUpdate,
     UserAdmin,
     UserUpdate,
 )
@@ -74,6 +86,7 @@ def decide_report(
     report_id: int,
     payload: ReportDecision,
     db: Session = Depends(get_db),
+    mod: User = Depends(moderator),
 ) -> dict:
     report = _get_report(db, report_id)
     if report.status != "open":
@@ -83,20 +96,60 @@ def decide_report(
         raise HTTPException(404, detail="Reported item no longer exists")
 
     if payload.decision == "dismiss":
-        set_hidden(target, False)  # nothing wrong: undo any auto-hide/suspension
+        # nothing wrong: undo the 3-reports auto-hide, never a moderator's decision
+        if hidden_automatically(target):
+            set_hidden(db, target, False)
         outcome = "dismissed"
     elif payload.decision == "hide":
         if isinstance(target, User):
             raise HTTPException(400, detail="A user can't be hidden; block them instead")
-        set_hidden(target, True)
+        set_hidden(db, target, True)
         outcome = "actioned"
     else:  # block the user, or the author/owner of the reported content
-        owner_of(db, target).is_blocked = True
+        owner = owner_of(db, target)
+        if owner.id == mod.id:
+            raise HTTPException(400, detail="You can't block yourself")
+        set_hidden(db, owner, True)
         outcome = "actioned"
     resolve_reports(db, report.target_type, report.target_id, outcome)
     db.commit()
     db.refresh(report)
     return _report_out(db, report, db.get(User, report.reporter_id))
+
+
+# ---------------------------------------------------------------------------
+# hide / unhide content directly
+# ---------------------------------------------------------------------------
+@router.patch("/requests/{request_id}", response_model=RequestOut)
+def set_request_visibility(
+    request_id: int,
+    payload: VisibilityUpdate,
+    db: Session = Depends(get_db),
+    mod: User = Depends(moderator),
+) -> dict:
+    req = db.get(HelpRequest, request_id)
+    if req is None:
+        raise HTTPException(404, detail="Request not found")
+    set_hidden(db, req, payload.is_hidden)
+    db.commit()
+    db.refresh(req)
+    return serialize_request(db, req, mod)
+
+
+@router.patch("/opportunities/{opp_id}", response_model=OpportunityOut)
+def set_opportunity_visibility(
+    opp_id: int,
+    payload: VisibilityUpdate,
+    db: Session = Depends(get_db),
+    mod: User = Depends(moderator),
+) -> dict:
+    opp = db.get(Opportunity, opp_id)
+    if opp is None:
+        raise HTTPException(404, detail="Opportunity not found")
+    set_hidden(db, opp, payload.is_hidden)
+    db.commit()
+    db.refresh(opp)
+    return serialize_opportunity(db, opp, mod.id)
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +230,10 @@ def update_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, detail="User not found")
-    for field, value in payload.model_dump(exclude_none=True).items():
+    changes = payload.model_dump(exclude_none=True)
+    if "is_blocked" in changes:
+        set_hidden(db, user, changes.pop("is_blocked"))  # also releases their claims
+    for field, value in changes.items():
         setattr(user, field, value)
     db.commit()
     db.refresh(user)
@@ -246,7 +302,7 @@ def _target_out(db: Session, report: Report, mod: User) -> dict | None:
             "roles": target.roles,
             "is_blocked": target.is_blocked,
         }
-    return serialize_opportunity(db, target, mod.id) | {"is_hidden": target.is_hidden}
+    return serialize_opportunity(db, target, mod.id)
 
 
 def _org_out(org: Organization, user: User) -> dict:
