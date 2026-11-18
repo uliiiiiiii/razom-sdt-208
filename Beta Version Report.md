@@ -2,7 +2,7 @@
 
 **Project:** Razom, a mutual-aid map connecting residents who need help with volunteers and verified organizations
 **Team:** Uliana Matviienko, Bogdan Borachuk
-**Stack:** FastAPI · PostgreSQL 16 + PostGIS · Alembic · JWT · React frontend
+**Stack:** FastAPI · PostgreSQL 16 + PostGIS · Alembic · JWT · Vite · Leaflet
 
 ---
 
@@ -10,7 +10,8 @@
 
 - **All four roles work end to end through the API.** Before, only residents and volunteers had endpoints. Organizations and moderators now have the API they need: verification, opportunities, sign-ups, attendance, reports, moderation and statistics.
 - **Stronger protection for vulnerable residents.** A volunteer sees the exact address only after the resident has accepted them, and only while the help is in progress. Every time someone other than the resident sees an address, it's logged, and addresses are deleted 30 days after a request is closed. Claiming is limited, and an unaccepted claim expires after 12 hours.
-- **Schema under version control.** The schema is now managed with Alembic migrations, all routes are under `/api`, and the old static frontend is being replaced by a React app.
+- **Schema under version control.** The schema is now managed with Alembic migrations, and all routes are under `/api`.
+- **A new frontend.** The Alpha HTML pages are replaced by a Vite app: log in, register, the map, and creating a request. See section 6.
 
 ## 2. Requirements status
 
@@ -92,20 +93,36 @@ Any logged-in user can report content or another user.
 | 11 | Alpha risk: no automated tests | 133 pytest tests against a real PostGIS database |
 | 12 | Alpha risk: no migrations | Alembic (3 migrations); existing Alpha databases upgrade cleanly |
 | 13 | Alpha risk: moderation and organization APIs missing | Implemented (FR 4, 5, 17–20, 24–29) |
-| 14 | Alpha risk: single-file static frontend | Being replaced by a React app built against `docs/FRONTEND-API.md` |
+| 14 | Alpha risk: single-file static frontend | Replaced by the Vite app in `frontend/` (section 6), built against `docs/FRONTEND-API.md` |
 
 A security review of the Beta backend found further issues before the frontend work began. All of them are fixed and covered by tests, for example accepting a different volunteer from a stale page, claim squatting, and fake reports locking out moderators.
 
-## 6. Contributions (Beta)
+## 6. Frontend
+
+The Alpha pages are replaced by a Vite app in `frontend/src`. It is plain JavaScript modules, not React. A hash router (`#/`, `#/login`, `#/register`, `#/create`) draws each screen into the page. The contract it follows is [`docs/FRONTEND-API.md`](./docs/FRONTEND-API.md).
+
+| Screen | What it does |
+|---|---|
+| Log in / Register | Register as resident, volunteer, or organization (resident and volunteer can be combined). An organization must give a name. The JWT is kept in `localStorage` and sent as `Authorization: Bearer`. |
+| Map | Search within a radius (up to 50 km), and filter by category and by needs or offers. A request is a colored circle with its category icon; an offer is a ring. Pins posted in the last 6 hours pulse. The list is ordered by urgency (medicine, water, groceries, charging, pets, transport, other), then newest first. Opening a request shows only the actions that role may take: claim, accept or decline, complete, release, confirm, reopen, cancel. |
+| Ask for help | The resident drops a pin and sends a category, title, description, and address. The public pin stays about 300 m from that point. |
+
+The page has a light theme and a dark theme meant for a room during a blackout. Fonts (Outfit, Manrope) and icons (Lucide, bundled) are part of the build, so nothing is loaded from a CDN. Map tiles are OpenStreetMap. User text is escaped before it is inserted into the page.
+
+`npm run build` writes `frontend/dist`. FastAPI serves that folder at `/`, and the content security policy allows fetches only from the same origin, so the app always calls `/api`. During development, Vite proxies `/api` to `http://localhost:8000`.
+
+Not in the interface yet: publishing opportunities, filing reports, and the moderator tools. Those exist on the API only.
+
+## 7. Contributions (Beta)
 
 | Member | Contribution |
 |---|---|
-| **Bogdan Borachuk** | Accounts, security, moderation and organizations: registration, login and JWT, role-based authorization, moderator seeding and promotion, organization verification, reports and the 3-report auto-hide rule, blocking (with rejection of old tokens), opportunities with slot and start-time rules, attendance, organization and moderator statistics, rate limits and security headers; the matching frontend screens and tests |
-| **Uliana Matviienko** | Help requests, privacy and the map: PostgreSQL schema and Alembic migrations, the request lifecycle and allowed transitions, claim / release / accept with concurrency safety, active-request and claim limits, exact vs approximate location rules, the address access log and retention, PostGIS radius search and filters, the Leaflet map; the matching frontend screens and tests |
+| **Bogdan Borachuk** | Accounts, security, moderation and organizations: registration, login and JWT, role-based authorization, moderator seeding and promotion, organization verification, reports and the 3-report auto-hide rule, blocking (with rejection of old tokens), opportunities with slot and start-time rules, attendance, organization and moderator statistics, rate limits and security headers; login and registration in the frontend, and the tests |
+| **Uliana Matviienko** | Help requests, privacy and the map: PostgreSQL schema and Alembic migrations, the request lifecycle and allowed transitions, claim / release / accept with concurrency safety, active-request and claim limits, exact vs approximate location rules, the address access log and retention, PostGIS radius search and filters, the Leaflet map; the map and “ask for help” screens, and the tests |
 
 Both members took part in integrating the frontend with the API and in fixing the problems found during the Alpha.
 
-## 7. How to run
+## 8. How to run
 
 ```bash
 docker compose up -d db                          # PostGIS on port 5433
@@ -114,6 +131,10 @@ export JWT_SECRET="<random string, at least 32 characters>"
 uvicorn app.main:app --port 8000                 # migrates the DB on start
 python -m app.demo_seed                          # demo accounts for every role (dev only)
 pytest                                           # after: pip install -r requirements-dev.txt
+
+cd ../frontend && npm install                    # back to the repo, then frontend/
+npm run dev                                      # http://127.0.0.1:5173 , proxies /api to port 8000
+npm run build                                    # frontend/dist, then open http://localhost:8000
 ```
 
 API reference: http://localhost:8000/docs · Frontend guide: [`docs/FRONTEND-API.md`](./docs/FRONTEND-API.md)
