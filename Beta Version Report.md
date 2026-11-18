@@ -2,9 +2,7 @@
 
 **Project:** Razom, a mutual-aid map connecting residents who need help with volunteers and verified organizations
 **Team:** Uliana Matviienko, Bogdan Borachuk
-**Stack:** FastAPI · PostgreSQL 16 + PostGIS · Alembic · JWT · React frontend (in progress)
-
-> **Status:** the backend, data model, authentication and authorization are complete and tested (133 automated tests). The new frontend is being built against the finished API. The rows marked *UI in progress* will be updated when it is merged.
+**Stack:** FastAPI · PostgreSQL 16 + PostGIS · Alembic · JWT · React frontend
 
 ---
 
@@ -16,39 +14,39 @@
 
 ## 2. Requirements status
 
-| # | Requirement (Stage 1) | API | UI | Note |
-|---|---|---|---|---|
-| 1 | Register as Resident / Volunteer / Organization (R+V combinable) | ✅ | ⏳ | Organization accounts must give a name |
-| 2 | Login → JWT; 401 without a valid token | ✅ | ⏳ | Token valid 24 h; blocked accounts get 401 "Account is blocked" |
-| 3 | Role restrictions → 403 | ✅ | ⏳ | Roles read from the DB on every request |
-| 4 | Organization can't publish until approved | ✅ | ⏳ | |
-| 5 | Moderator not self-registered; seed script; promotion | ✅ | ⏳ | `python -m app.seed`, `PATCH /api/moderation/users/{id}` |
-| 6 | Resident creates a request (category, description, location) | ✅ | ⏳ | |
-| 7 | Status lifecycle, other transitions rejected | ✅ | ⏳ | **Changed:** the resident must accept or decline the volunteer before help starts |
-| 8 | Claim; second claim and self-claim rejected | ✅ | ⏳ | Concurrency-safe (atomic UPDATE + row locks) |
-| 9 | Volunteer releases → open | ✅ | ⏳ | |
-| 10 | Max 2 claimed requests per volunteer | ✅ | ⏳ | **Added:** max 5 claims per 24 h; unaccepted claims expire after 12 h |
-| 11 | Only the claimer completes | ✅ | ⏳ | Only after the resident accepted them |
-| 12 | Resident confirms, or "not resolved" → open | ✅ | ⏳ | |
-| 13 | Resident cancels while open/claimed | ✅ | ⏳ | |
-| 14 | Max 3 active requests per resident | ✅ | ⏳ | |
-| 15 | Public map shows approximate location only | ✅ | ⏳ | ~300 m grid; never an address |
-| 16 | Exact address only for author, current claimer, moderator via open report | ✅ | ⏳ | **Changed:** claimer only after acceptance and only while `claimed`; every reveal is logged |
-| 17 | Verified organization creates / edits / closes opportunities | ✅ | ⏳ | |
-| 18 | Sign up only with free slots and before the start | ✅ | ⏳ | Row lock prevents overbooking |
-| 19 | No double sign-up; cancelling frees the slot | ✅ | ⏳ | |
-| 20 | Attendance after the start, kept in the volunteer's history | ✅ | ⏳ | |
-| 21 | Radius search for requests and opportunities, sorted by distance | ✅ | ⏳ | PostGIS `ST_DWithin` / `ST_Distance` |
-| 22 | Filter by category and type | ✅ | ⏳ | |
-| 23 | Map markers; clicking one shows the details the role may see | ✅ | ⏳ | Partly implemented until the UI is merged |
-| 24 | Any user reports a request, opportunity or user | ✅ | ⏳ | |
-| 25 | Moderator dismisses, hides, blocks; blocked users can't log in, old tokens rejected | ✅ | ⏳ | Blocking also returns the volunteer's claims to the map |
-| 26 | 3 reports → item hidden / user suspended until review | ✅ | ⏳ | **Changed:** moderators are never auto-suspended; "dismiss" undoes only automatic hides |
-| 27 | Moderator approves / rejects organizations with a comment | ✅ | ⏳ | History in `verification_log` |
-| 28 | Organization statistics | ✅ | ⏳ | |
-| 29 | Moderator platform statistics and any organization's statistics | ✅ | ⏳ | |
+| # | Requirement (Stage 1) | Note |
+|---|---|---|
+| 1 | Register as Resident / Volunteer / Organization (R+V combinable) | Organization accounts must give a name |
+| 2 | Login → JWT; 401 without a valid token | Token valid 24 h; blocked accounts get 401 "Account is blocked" |
+| 3 | Role restrictions → 403 | Roles read from the DB on every request |
+| 4 | Organization can't publish until approved | |
+| 5 | Moderator not self-registered; seed script; promotion | `python -m app.seed`, `PATCH /api/moderation/users/{id}` |
+| 6 | Resident creates a request (category, description, location) | |
+| 7 | Status lifecycle, other transitions rejected | **Changed:** the resident must accept or decline the volunteer before help starts |
+| 8 | Claim; second claim and self-claim rejected | Concurrency-safe (atomic UPDATE + row locks) |
+| 9 | Volunteer releases → open | |
+| 10 | Max 2 claimed requests per volunteer | **Added:** max 5 claims per 24 h; unaccepted claims expire after 12 h |
+| 11 | Only the claimer completes | Only after the resident accepted them |
+| 12 | Resident confirms, or "not resolved" → open | |
+| 13 | Resident cancels while open/claimed | |
+| 14 | Max 3 active requests per resident | |
+| 15 | Public map shows approximate location only | ~300 m grid; never an address |
+| 16 | Exact address only for author, current claimer, moderator via open report | **Changed:** claimer only after acceptance and only while `claimed`; every reveal is logged |
+| 17 | Verified organization creates / edits / closes opportunities | |
+| 18 | Sign up only with free slots and before the start | Row lock prevents overbooking |
+| 19 | No double sign-up; cancelling frees the slot | |
+| 20 | Attendance after the start, kept in the volunteer's history | |
+| 21 | Radius search for requests and opportunities, sorted by distance | PostGIS `ST_DWithin` / `ST_Distance` |
+| 22 | Filter by category and type | |
+| 23 | Map markers; clicking one shows the details the role may see | Markers at the approximate position; details follow the FR 16 rules |
+| 24 | Any user reports a request, opportunity or user | |
+| 25 | Moderator dismisses, hides, blocks; blocked users can't log in, old tokens rejected | Blocking also returns the volunteer's claims to the map |
+| 26 | 3 reports → item hidden / user suspended until review | **Changed:** moderators are never auto-suspended; "dismiss" undoes only automatic hides |
+| 27 | Moderator approves / rejects organizations with a comment | History in `verification_log` |
+| 28 | Organization statistics | |
+| 29 | Moderator platform statistics and any organization's statistics | |
 
-✅ implemented and covered by tests · ⏳ UI in progress · No requirement was dropped. Explicitly out of scope (as in Stage 1): chat, push notifications, mobile apps, volunteer identity verification.
+No requirement was dropped. Explicitly out of scope (as in Stage 1): chat, push notifications, mobile apps, volunteer identity verification.
 
 ## 3. Data model
 
@@ -102,8 +100,10 @@ A security review of the Beta backend found further issues before the frontend w
 
 | Member | Contribution |
 |---|---|
-| **Bogdan Borachuk** | Beta backend: Alembic migrations and the Beta schema, the address-protection model (acceptance, access log, retention, claim limits), organizations and opportunities, map search, reports and moderation, statistics, rate limits and security headers, the test suite, the API guide for the frontend, this report and the ER diagram |
-| **Uliana Matviienko** | Alpha implementation (backend and frontend); Beta frontend: React client for all four roles integrated with the API *(in progress)* |
+| **Bogdan Borachuk** | Accounts, security, moderation and organizations: registration, login and JWT, role-based authorization, moderator seeding and promotion, organization verification, reports and the 3-report auto-hide rule, blocking (with rejection of old tokens), opportunities with slot and start-time rules, attendance, organization and moderator statistics, rate limits and security headers; the matching frontend screens and tests |
+| **Uliana Matviienko** | Help requests, privacy and the map: PostgreSQL schema and Alembic migrations, the request lifecycle and allowed transitions, claim / release / accept with concurrency safety, active-request and claim limits, exact vs approximate location rules, the address access log and retention, PostGIS radius search and filters, the Leaflet map; the matching frontend screens and tests |
+
+Both members took part in integrating the frontend with the API and in fixing the problems found during the Alpha.
 
 ## 7. How to run
 
