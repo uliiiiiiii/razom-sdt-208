@@ -1,13 +1,13 @@
 """Auth router: register and login (JWT)."""
-from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import User
+from ..models import Organization, User
+from ..ratelimit import LOGIN_LIMIT, REGISTER_LIMIT, limiter
 from ..schemas import TokenResponse, UserLogin, UserOut, UserRegister
 from ..security import create_access_token, hash_password, verify_password
 
@@ -15,7 +15,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
+@limiter.limit(REGISTER_LIMIT)
+def register(request: Request, payload: UserRegister, db: Session = Depends(get_db)) -> User:
     if db.scalar(select(User).where(User.email == payload.email)):
         raise HTTPException(status_code=409, detail="Email already registered")
     if not (payload.is_resident or payload.is_volunteer or payload.is_organization):
@@ -27,19 +28,23 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
         email=payload.email,
         password_hash=hash_password(payload.password),
         display_name=payload.display_name,
-        phone=payload.phone,
         is_resident=payload.is_resident,
         is_volunteer=payload.is_volunteer,
         is_organization=payload.is_organization,
     )
     db.add(user)
+    db.flush()
+    if payload.is_organization:
+        # publishing is blocked until a moderator approves this profile
+        db.add(Organization(user_id=user.id, org_name=payload.org_name))
     db.commit()
     db.refresh(user)
     return user
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
+@limiter.limit(LOGIN_LIMIT)
+def login(request: Request, payload: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")

@@ -2,7 +2,7 @@
 // Talks to the FastAPI backend. Doubles as the UX/UI prototype.
 
 const API = (() => {
-  const base = ""; // same origin (backend serves frontend)
+  const base = "/api"; // same origin (backend serves frontend)
   function token() { return localStorage.getItem("razom_token"); }
   async function req(path, opts = {}) {
     const headers = { ...(opts.headers || {}) };

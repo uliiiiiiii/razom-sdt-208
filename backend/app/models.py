@@ -31,12 +31,13 @@ class User(Base):
     email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
-    phone: Mapped[str | None] = mapped_column(Text)
     is_resident: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_volunteer: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_organization: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_moderator: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # blocked by the 3-reports rule (a dismissed report undoes only these)
+    auto_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -82,8 +83,12 @@ class HelpRequest(Base):
     __tablename__ = "help_requests"
     __table_args__ = (
         CheckConstraint(
-            "status <> 'claimed' OR claimed_by IS NOT NULL",
+            "status NOT IN ('claimed','completed') OR claimed_by IS NOT NULL",
             name="chk_claim_consistency",
+        ),
+        CheckConstraint(
+            "accepted_at IS NULL OR claimed_by IS NOT NULL",
+            name="chk_accept_needs_claimer",
         ),
         CheckConstraint(
             "category IN ('charging','groceries','medicine','water',"
@@ -109,6 +114,12 @@ class HelpRequest(Base):
     address: Mapped[str | None] = mapped_column(Text)
     claimed_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # set when the resident accepts the claiming volunteer; address revealed only after this
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # set on confirm/cancel; drives address retention
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    auto_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -129,10 +140,13 @@ class Opportunity(Base):
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(Text, default="other", nullable=False)
     location: Mapped[object] = mapped_column(Geography("POINT", srid=4326), nullable=False)
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     slots_total: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(Text, default="open", nullable=False)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    auto_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -172,6 +186,42 @@ class Report(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class ClaimHistory(Base):
+    """Every claim of a request, including released/declined ones."""
+
+    __tablename__ = "claim_history"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("help_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    volunteer_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    claimed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(Text, default="active", nullable=False)
+
+
+class AddressAccess(Base):
+    """Audit trail: who was shown a request's exact address, and how."""
+
+    __tablename__ = "address_access_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("help_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    accessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    via: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class VerificationLog(Base):
