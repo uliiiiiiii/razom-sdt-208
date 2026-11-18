@@ -49,6 +49,8 @@ def _requests(db: Session, point, radius: int, category: str | None) -> list[dic
             HelpRequest.id,
             HelpRequest.category,
             HelpRequest.title,
+            HelpRequest.description,
+            HelpRequest.created_at,
             lat_expr(loc).label("lat"),
             lng_expr(loc).label("lng"),
             func.ST_Distance(loc, point).label("dist"),
@@ -80,6 +82,8 @@ def _opportunities(db: Session, point, radius: int, category: str | None) -> lis
             Opportunity.id,
             Opportunity.category,
             Opportunity.title,
+            Opportunity.description,
+            Opportunity.created_at,
             Opportunity.start_time,
             (Opportunity.slots_total - taken).label("slots_left"),
             lat_expr(loc).label("lat"),
@@ -105,6 +109,16 @@ def _opportunities(db: Session, point, radius: int, category: str | None) -> lis
     ]
 
 
+def _one_line(text: str | None, limit: int = 140) -> str | None:
+    if not text:
+        return None
+    line = " ".join(text.split())
+    if len(line) <= limit:
+        return line
+    cut = line[:limit].rsplit(" ", 1)[0]
+    return (cut or line[:limit]).rstrip(".,;:") + "…"
+
+
 def _item(kind: str, row, *, start_time, slots_left) -> dict:
     return {
         "type": kind,
@@ -114,6 +128,8 @@ def _item(kind: str, row, *, start_time, slots_left) -> dict:
         "latitude": row.lat,
         "longitude": row.lng,
         "distance_m": round(row.dist, 1),
+        "created_at": row.created_at,
+        "detail": _one_line(row.description),
         "start_time": start_time,
         "slots_left": slots_left,
     }

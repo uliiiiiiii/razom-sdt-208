@@ -89,6 +89,8 @@ class MapItem(BaseModel):
     latitude: float
     longitude: float
     distance_m: float
+    created_at: datetime
+    detail: str | None = None  # one line of the description, never an address
     start_time: datetime | None = None  # opportunities only
     slots_left: int | None = None  # opportunities only
 

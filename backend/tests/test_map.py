@@ -25,6 +25,7 @@ def test_map_mixes_types_sorted(client):
     assert items[0]["distance_m"] <= items[1]["distance_m"]
     assert items[1]["slots_left"] == 2 and items[1]["start_time"]
     assert items[0]["slots_left"] is None and "address" not in items[0]
+    assert items[0]["created_at"] and isinstance(items[0]["detail"], str)
 
 
 def test_map_request_point_is_approximate(client):
