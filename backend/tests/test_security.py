@@ -26,7 +26,7 @@ def test_security_headers(client, path):
     r = client.get(path)
     assert r.headers["content-security-policy"] == CSP
     assert r.headers["x-content-type-options"] == "nosniff"
-    assert r.headers["referrer-policy"] == "no-referrer"
+    assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
 
 
 def test_login_rate_limit(client, rate_limited):

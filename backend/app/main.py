@@ -71,7 +71,9 @@ async def security_headers(request: Request, call_next):
     if not request.url.path.startswith(DOCS_PATHS):
         response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "no-referrer"
+    # OSM tile servers refuse requests without a Referer; cross-site we send
+    # only the origin, never a path
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
 
