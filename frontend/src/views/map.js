@@ -70,6 +70,30 @@ function byUrgencyThenFreshness(a, b) {
   return rank(a) - rank(b) || postedAt(b) - postedAt(a);
 }
 
+function row(it, detail) {
+  const isReq = it.type === "request";
+  const when = stamp(it);
+  const ico = isReq ? `cat-${pinCat(it.category)}` : "opp";
+  return `<button type="button" class="near-row" data-id="${Number(it.id)}" data-type="${isReq ? "request" : "opportunity"}">
+    <span class="near-ico ${ico}">${icon(CATEGORY_ICON[it.category] || "ellipsis", 16)}</span>
+    <span class="near-text">
+      <span class="near-title">${esc(it.title || categoryLabel(it.category))}</span>
+      <span class="near-detail">${esc(detail)}</span>
+    </span>
+    <time class="near-time"${when ? ` datetime="${esc(it.created_at || "")}"` : ""}>${esc(when)}</time>
+  </button>`;
+}
+
+// what the user has to do next on one of their own requests or claims
+function mineLine(r) {
+  if (r.is_mine && r.status === "claimed" && !r.accepted) return "A volunteer offered to help: accept or decline";
+  if (r.is_mine && r.status === "completed") return "Marked done: confirm or reopen";
+  if (r.is_mine && r.status === "claimed") return "Volunteer on the way";
+  if (r.is_claimer && !r.accepted) return "Waiting for the resident to accept you";
+  if (r.is_claimer) return "Accepted: help, then mark completed";
+  return statusLabel(r.status);
+}
+
 function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -88,6 +112,10 @@ export function renderMap(app) {
     <div class="deck">
       <div class="stack">
         <section class="sheet" id="areaCard">
+          <div class="mine" id="mineBox" hidden>
+            <h2 class="area-title">Yours</h2>
+            <div class="near-list" id="mineList"></div>
+          </div>
           <h1 class="area-title">Needs nearby</h1>
           <p class="area-count" id="areaCount">Searching…</p>
           <div class="near-list" id="nearList"></div>
@@ -176,7 +204,15 @@ export function renderMap(app) {
     });
   });
 
-  app.querySelector("#nearList").addEventListener("click", (e) => {
+  // Inline onclick="" is blocked by the API's CSP (script-src 'self'), so
+  // action buttons are handled here by delegation.
+  app.querySelector("#detailBody").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (btn) act(btn);
+  });
+
+  // covers both the "Yours" list and the nearby list
+  app.querySelector("#areaCard").addEventListener("click", (e) => {
     const row = e.target.closest(".near-row");
     if (!row) return;
     const key = `${row.dataset.type}:${row.dataset.id}`;
@@ -189,8 +225,36 @@ export function renderMap(app) {
     else if (m) m.openPopup();
   });
 
-  window.__razomRefresh = search;
-  search();
+  window.__razomRefresh = () => {
+    search();
+    loadMine();
+  };
+  window.__razomRefresh();
+
+  // Claimed and completed requests are not on the public map, so residents and
+  // volunteers reach their own through this list (accept, complete, confirm).
+  async function loadMine() {
+    const roles = getUser()?.roles || [];
+    const calls = [];
+    if (roles.includes("resident")) calls.push(API.get("/me/requests"));
+    if (roles.includes("volunteer")) calls.push(API.get("/me/claims"));
+    const box = app.querySelector("#mineBox");
+    if (!box || !calls.length) return;
+    try {
+      const seen = new Set();
+      const items = (await Promise.all(calls)).flat().filter((r) => {
+        if (seen.has(r.id)) return false;
+        seen.add(r.id);
+        return r.is_mine ? ["open", "claimed", "completed"].includes(r.status) : r.status === "claimed";
+      });
+      box.hidden = !items.length;
+      app.querySelector("#mineList").innerHTML = items
+        .map((r) => row({ ...r, type: "request" }, mineLine(r)))
+        .join("");
+    } catch {
+      box.hidden = true;
+    }
+  }
 
   function markSelected(m, key) {
     selectedKey = key;
@@ -213,19 +277,7 @@ export function renderMap(app) {
     else if (items.length) count.textContent = plural(items.length, "offer", "offers");
     else count.textContent = "No open requests";
 
-    list.innerHTML = items.slice().sort(byUrgencyThenFreshness).map((it) => {
-      const isReq = it.type === "request";
-      const when = stamp(it);
-      const ico = isReq ? `cat-${pinCat(it.category)}` : "opp";
-      return `<button type="button" class="near-row" data-id="${Number(it.id)}" data-type="${isReq ? "request" : "opportunity"}">
-        <span class="near-ico ${ico}">${icon(CATEGORY_ICON[it.category] || "ellipsis", 16)}</span>
-        <span class="near-text">
-          <span class="near-title">${esc(it.title || categoryLabel(it.category))}</span>
-          <span class="near-detail">${esc(oneLine(it))}</span>
-        </span>
-        <time class="near-time"${when ? ` datetime="${esc(it.created_at || "")}"` : ""}>${esc(when)}</time>
-      </button>`;
-    }).join("");
+    list.innerHTML = items.slice().sort(byUrgencyThenFreshness).map((it) => row(it, oneLine(it))).join("");
   }
 
   async function search() {
@@ -295,28 +347,27 @@ async function openDetail(id) {
   const user = getUser();
   try {
     const r = await API.get(`/requests/${id}`);
+    const rid = Number(r.id);
+    const b = (action, label, cls = "", claimId = null) =>
+      `<button type="button" class="btn ${cls}" data-id="${rid}" data-act="${action}"${claimId == null ? "" : ` data-claim="${Number(claimId)}"`}>${label}</button>`;
     const buttons = [];
     if (user.roles.includes("volunteer") && r.status === "open" && !r.is_mine) {
-      buttons.push(`<button class="btn" onclick="window.__razomAct(${id},'claim')">Claim</button>`);
+      buttons.push(b("claim", "Claim"));
     }
-    if (r.is_mine && r.status === "claimed" && !r.accepted && r.claimer && r.claimer.claim_id != null) {
-      const cid = Number(r.claimer.claim_id);
-      buttons.push(`<button class="btn" onclick="window.__razomActClaim(${id},'accept',${cid})">Accept</button>`);
-      buttons.push(`<button class="btn secondary" onclick="window.__razomActClaim(${id},'decline',${cid})">Decline</button>`);
+    if (r.is_mine && r.status === "claimed" && !r.accepted && r.claimer?.claim_id != null) {
+      buttons.push(b("accept", "Accept", "", r.claimer.claim_id), b("decline", "Decline", "secondary", r.claimer.claim_id));
     }
     if (r.is_claimer && r.status === "claimed" && r.accepted) {
-      buttons.push(`<button class="btn" onclick="window.__razomAct(${id},'complete')">Mark completed</button>`);
-      buttons.push(`<button class="btn secondary" onclick="window.__razomAct(${id},'release')">Release</button>`);
+      buttons.push(b("complete", "Mark completed"));
     }
-    if (r.is_claimer && r.status === "claimed" && !r.accepted) {
-      buttons.push(`<button class="btn secondary" onclick="window.__razomAct(${id},'release')">Release</button>`);
+    if (r.is_claimer && r.status === "claimed") {
+      buttons.push(b("release", "Release", "secondary"));
     }
     if (r.is_mine && (r.status === "open" || r.status === "claimed")) {
-      buttons.push(`<button class="btn danger" id="cancelBtn" onclick="window.__razomAct(${id},'cancel')">Cancel request</button>`);
+      buttons.push(b("cancel", "Cancel request", "danger"));
     }
     if (r.is_mine && r.status === "completed") {
-      buttons.push(`<button class="btn" onclick="window.__razomAct(${id},'confirm')">Confirm received</button>`);
-      buttons.push(`<button class="btn secondary" onclick="window.__razomAct(${id},'reopen')">Not resolved</button>`);
+      buttons.push(b("confirm", "Confirm received"), b("reopen", "Not resolved", "secondary"));
     }
 
     const statusClass = STATUS_CLASS.has(r.status) ? r.status : "open";
@@ -358,8 +409,6 @@ async function openDetail(id) {
     body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
   }
 }
-window.openDetail = openDetail;
-
 function showActionError(message) {
   document.querySelectorAll("#detailPanel .btn").forEach((b) => {
     b.disabled = false;
@@ -371,20 +420,19 @@ function showActionError(message) {
   }
 }
 
-window.__razomAct = async function (id, action, confirmed) {
-  if (action === "cancel" && !confirmed) {
-    const btn = document.getElementById("cancelBtn");
-    if (btn) {
-      btn.textContent = "Confirm cancel";
-      btn.onclick = () => window.__razomAct(id, "cancel", true);
-    }
+async function act(btn) {
+  const { id, act: action, claim } = btn.dataset;
+  if (action === "cancel" && !btn.dataset.sure) {
+    btn.dataset.sure = "1";
+    btn.textContent = "Confirm cancel";
     return;
   }
   document.querySelectorAll("#detailPanel .btn").forEach((b) => {
     b.disabled = true;
   });
   try {
-    await API.patch(`/requests/${id}/${action}`);
+    // accept/decline name the claim, so a stale page can't accept someone else
+    await API.patch(`/requests/${id}/${action}`, claim ? { claim_id: Number(claim) } : undefined);
     if (action === "cancel" || action === "confirm") {
       const panel = document.getElementById("detailPanel");
       if (panel) panel.hidden = true;
@@ -395,17 +443,4 @@ window.__razomAct = async function (id, action, confirmed) {
   } catch (ex) {
     showActionError(ex.message);
   }
-};
-
-window.__razomActClaim = async function (id, action, claimId) {
-  document.querySelectorAll("#detailPanel .btn").forEach((b) => {
-    b.disabled = true;
-  });
-  try {
-    await API.patch(`/requests/${id}/${action}`, { claim_id: claimId });
-    openDetail(id);
-    window.__razomRefresh?.();
-  } catch (ex) {
-    showActionError(ex.message);
-  }
-};
+}
