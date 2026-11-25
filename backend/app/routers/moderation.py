@@ -292,8 +292,9 @@ def _target_out(db: Session, report: Report, mod: User) -> dict | None:
     if target is None:
         return None
     if isinstance(target, HelpRequest):
-        # exact address only while the report is open; the reveal is logged
-        via = "report_review" if report.status == "open" else None
+        # exact address only while the report is open and someone else filed it
+        # (a moderator's own report is no pretext to read it); the reveal is logged
+        via = "report_review" if report.status == "open" and report.reporter_id != mod.id else None
         return serialize_request(db, target, mod, via=via)
     if isinstance(target, User):
         return {

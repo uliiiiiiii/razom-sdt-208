@@ -3,7 +3,7 @@
 A mutual-aid map web platform connecting residents who need help with volunteers and verified organizations — built for war / blackout conditions where needs (charging a phone, delivering water/medicine, walking shelter dogs) are scattered across chats and lost in minutes.
 
 > **Team:** Uliana Matviienko, Bogdan Borachuk
-> **Stack:** FastAPI · PostgreSQL + PostGIS · JWT auth · Leaflet (HTML) frontend
+> **Stack:** FastAPI · PostgreSQL + PostGIS · JWT auth · Vite + Leaflet frontend
 
 This repository is at the **Beta** stage (Stage 3): the backend is complete; the new frontend is in progress. The Alpha is described in [`Alpha Version Report.md`](./Alpha%20Version%20Report.md).
 
@@ -76,7 +76,7 @@ razom-sdt-208/
 │   │   ├── migrations/             # Alembic: 0001 baseline, 0002 beta, 0003 review fixes
 │   │   └── routers/                # auth, requests, me, map, opportunities, reports, moderation
 │   └── tests/                      # pytest against a real PostGIS test database
-└── frontend/                       # web client (being replaced by the Beta frontend)
+└── frontend/                       # Vite web client (map, requests, auth)
 ```
 
 ## Environment variables

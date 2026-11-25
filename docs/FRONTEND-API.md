@@ -163,7 +163,7 @@ The backend enforces every rule above; hiding buttons only keeps the UI tidy.
 ## 8. Reports
 
 `POST /api/reports` (any logged-in user) `{target_type: request|opportunity|user, target_id, reason}`
-→ 201 `{id, status}`; 400 for reporting yourself or your own content; 404 for an unknown target; 409 if you already reported it.
+→ 201 `{id, status}`; 400 for reporting yourself or your own content; 404 for an unknown target or one you can't open (hidden, or a request that isn't open and isn't yours); 409 if you already reported it.
 
 Three reports from different users hide the item automatically (or suspend the user, unless they're a moderator) until a moderator decides.
 

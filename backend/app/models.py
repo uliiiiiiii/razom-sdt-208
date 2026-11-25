@@ -1,7 +1,7 @@
 """ORM models (SQLAlchemy + GeoAlchemy2).
 
-These mirror db/init.sql. The schema is created/verified at startup against
-the real PostgreSQL+PostGIS database.
+The schema itself is owned by the Alembic migrations in app/migrations;
+these models must be kept in step with them.
 """
 from __future__ import annotations
 

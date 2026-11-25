@@ -90,7 +90,7 @@ api = APIRouter(prefix="/api")
 
 @api.get("/health", tags=["meta"])
 def health() -> dict:
-    return {"status": "ok", "service": "razom", "version": "0.2.0-beta"}
+    return {"status": "ok", "service": "razom", "version": app.version}
 
 
 api.include_router(auth.router)
