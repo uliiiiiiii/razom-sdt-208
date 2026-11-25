@@ -357,7 +357,7 @@ async function openDetail(id) {
     const b = (action, label, cls = "", claimId = null) =>
       `<button type="button" class="btn ${cls}" data-id="${rid}" data-act="${action}"${claimId == null ? "" : ` data-claim="${Number(claimId)}"`}>${label}</button>`;
     const buttons = [];
-    if (user.roles.includes("volunteer") && r.status === "open" && !r.is_mine) {
+    if (user?.roles?.includes("volunteer") && r.status === "open" && !r.is_mine) {
       buttons.push(b("claim", "Claim"));
     }
     if (r.is_mine && r.status === "claimed" && !r.accepted && r.claimer?.claim_id != null) {

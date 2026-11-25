@@ -9,7 +9,7 @@ import "@fontsource/manrope/cyrillic-500.css";
 import "@fontsource/manrope/cyrillic-600.css";
 import "@fontsource/manrope/cyrillic-700.css";
 import "./styles.css";
-import { getToken } from "./api.js";
+import { getToken, esc } from "./api.js";
 import { renderUserBox, requireAuth, refreshMe } from "./auth.js";
 import { renderLogin } from "./views/login.js";
 import { renderRegister } from "./views/register.js";
@@ -69,7 +69,7 @@ async function router() {
   const app = document.getElementById("app");
   const match = matchRoute(path);
   if (!match) {
-    location.hash = "#/";
+    app.innerHTML = `<div class="page"><div class="card" style="text-align:center;padding:48px 24px"><h1>Page not found</h1><p>The page <code>${esc(path)}</code> doesn't exist.</p><a class="btn" href="#/">Back to map</a></div></div>`;
     return;
   }
   const isAuthScreen = path === "/login" || path === "/register";

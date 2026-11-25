@@ -27,6 +27,7 @@ export function renderLogin(app) {
     const btn = e.target.querySelector("button[type=submit]");
     err.hidden = true;
     btn.disabled = true;
+    btn.textContent = "Signing in…";
     try {
       const res = await API.post("/auth/login", {
         email: f.get("email"),
@@ -47,6 +48,7 @@ export function renderLogin(app) {
       err.textContent = ex.message;
       err.hidden = false;
       btn.disabled = false;
+      btn.textContent = "Log in";
     }
   });
 }

@@ -71,6 +71,7 @@ export function renderRegister(app) {
       org_name: isOrg ? f.get("org_name") || null : null,
     };
     btn.disabled = true;
+    btn.textContent = "Creating account…";
     try {
       await API.post("/auth/register", body);
       const res = await API.post("/auth/login", { email: body.email, password: body.password });
@@ -88,6 +89,7 @@ export function renderRegister(app) {
       err.textContent = ex.message;
       err.hidden = false;
       btn.disabled = false;
+      btn.textContent = "Create account";
     }
   });
 }
