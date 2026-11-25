@@ -121,11 +121,14 @@ def decide(
 ) -> IdentityVerification:
     if v.user_id == moderator.id:
         raise HTTPException(403, "You can't review your own verification")
+    # Lock order matches revoke/on_moderator_block: user row first, then the verification row.
+    db.execute(select(User.id).where(User.id == v.user_id).with_for_update())
     db.execute(select(IdentityVerification.id).where(IdentityVerification.id == v.id).with_for_update())
     db.refresh(v)
+    user = db.get(User, v.user_id)
+    db.refresh(user)  # re-read under the lock: a block may have committed since the caller loaded it
     if v.status != "pending":
         raise HTTPException(409, "This submission has already been decided")
-    user = db.get(User, v.user_id)
     mine = VerificationImage.verification_id == v.id
     if decision == "approved":
         if user.is_blocked:

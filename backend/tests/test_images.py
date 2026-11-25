@@ -113,3 +113,9 @@ def test_config_requires_verification_key(monkeypatch):
     monkeypatch.setenv("VERIFICATION_KEY", "short-key")
     with pytest.raises(RuntimeError):
         get_settings()
+
+
+def test_normalize_strips_all_non_alphanumerics():
+    assert fingerprint("АВ–123 456") == fingerprint("AB123456")
+    assert fingerprint("AB\t123456") == fingerprint("AB123456")
+    assert normalize_document_number("\t\t\t\t") == ""

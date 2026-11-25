@@ -5,6 +5,7 @@ No `from __future__ import annotations`: the routes are rate limited (see rateli
 """
 from typing import Literal
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -159,7 +160,10 @@ def review_image(
         raise HTTPException(404, "Image not found")
     db.add(VerificationAccess(verification_id=vid, moderator_id=mod.id, kind=kind))
     db.commit()
-    return Response(decrypt(image.data), media_type="image/jpeg", headers=NO_STORE)
+    try:
+        return Response(decrypt(image.data), media_type="image/jpeg", headers=NO_STORE)
+    except InvalidToken:  # stored under a different VERIFICATION_KEY
+        raise HTTPException(404, "Image not found") from None
 
 
 @moderation_router.patch("/verifications/{vid}", response_model=VerificationReview)
@@ -215,4 +219,7 @@ def user_photo(user_id: int, db: Session = Depends(get_db), viewer: User = Depen
     )
     if image is None or not photo_visible_to(db, owner, viewer):
         raise HTTPException(404, "Photo not found")
-    return Response(decrypt(image.data), media_type="image/jpeg", headers=NO_STORE)
+    try:
+        return Response(decrypt(image.data), media_type="image/jpeg", headers=NO_STORE)
+    except InvalidToken:  # stored under a different VERIFICATION_KEY
+        raise HTTPException(404, "Photo not found") from None

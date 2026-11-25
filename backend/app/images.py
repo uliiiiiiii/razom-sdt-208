@@ -79,8 +79,7 @@ _FOLD = str.maketrans("АВЕІКМНОРСТУХ", "ABEIKMHOPCTYX")
 
 
 def normalize_document_number(raw: str) -> str:
-    s = raw.upper()
-    s = "".join(c for c in s if c not in " -.")
+    s = "".join(c for c in raw.upper() if c.isalnum())
     return s.translate(_FOLD)
 
 

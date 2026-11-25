@@ -120,3 +120,42 @@ def test_approve_blocked_user_is_409(client):
     vid = _vid(client, mod, u)
     _sql("UPDATE users SET is_blocked = true WHERE id = :i", i=u["id"])
     assert _decide(client, mod, vid, "approved").status_code == 409
+
+
+def test_decide_rechecks_blocked_after_locking(client):
+    import pytest
+    from fastapi import HTTPException
+    from sqlalchemy.orm import Session
+
+    from app.models import IdentityVerification, User
+    from app.verification import decide
+
+    mod, u = make_moderator(client), make_user(client, "resident")
+    submit_verification(client, u)
+    vid = _vid(client, mod, u)
+    with Session(engine) as db:
+        row = db.get(IdentityVerification, vid)
+        _held = db.get(User, u["id"])  # the user is already loaded when the block commits
+        modrow = db.get(User, mod["id"])
+        _sql("UPDATE users SET is_blocked = true WHERE id = :i", i=u["id"])
+        with pytest.raises(HTTPException) as e:
+            decide(db, row, modrow, "approved", None)
+        assert e.value.status_code == 409
+    assert _sql("SELECT is_verified FROM users WHERE id = :i", i=u["id"])[0][0] is False
+
+
+def test_undecryptable_images_are_404_not_500(client):
+    from cryptography.fernet import Fernet
+
+    mod, owner = make_moderator(client), make_user(client, "resident")
+    make_verified(client, owner, mod)
+    bad = Fernet(Fernet.generate_key()).encrypt(b"x")
+    _sql("UPDATE verification_images SET data = :d", d=bad)
+    r = client.get(f"/api/users/{owner['id']}/photo", headers=owner["h"])
+    assert r.status_code == 404 and r.json() == {"detail": "Photo not found"}
+
+    other = make_user(client, "resident")
+    submit_verification(client, other)
+    vid = _vid(client, mod, other)
+    _sql("UPDATE verification_images SET data = :d", d=bad)
+    assert client.get(f"{Q}/{vid}/images/selfie", headers=mod["h"]).status_code == 404

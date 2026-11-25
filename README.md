@@ -30,8 +30,11 @@ pip install -r requirements.txt
 export DATABASE_URL="postgresql+psycopg2://razom:razom@localhost:5433/razom"
 # required, at least 32 characters; the app refuses to start without it
 export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
-# required, at least 32 characters; encrypts identity-verification images
-export VERIFICATION_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+# required, at least 32 characters; encrypts identity-verification images.
+# Generate ONCE and keep it (e.g. in an untracked .env or your shell profile), then reuse it:
+# changing it makes stored photos and pending ID images unreadable and breaks duplicate detection.
+#   python -c 'import secrets; print(secrets.token_urlsafe(48))'
+export VERIFICATION_KEY="<your saved key>"
 uvicorn app.main:app --reload --port 8000
 ```
 

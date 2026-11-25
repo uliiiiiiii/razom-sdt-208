@@ -10,7 +10,11 @@ cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
-export VERIFICATION_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"   # required; encrypts verification images
+# VERIFICATION_KEY (required, 32+ chars) encrypts verification images. Generate it ONCE
+# (python -c 'import secrets; print(secrets.token_urlsafe(48))'), save it in an untracked .env or your
+# shell profile and reuse it: changing it makes stored photos and pending ID images unreadable
+# and breaks duplicate detection.
+export VERIFICATION_KEY="<your saved key>"
 uvicorn app.main:app --reload --port 8000    # creates/updates the schema on start
 python -m app.demo_seed                      # demo accounts + content (dev only); re-run before a demo, it wipes and seeds again
 ```
@@ -205,7 +209,7 @@ A user proves their identity once and a moderator checks it by hand. A verified 
 | Method & path | Notes |
 |---|---|
 | `POST /api/me/verification/start` | No body. 200 `{word, expires_at}`: a challenge (two words joined by `-`) valid for 24 h. Ask the user to write it on paper and hold it in the selfie. Calling again replaces the challenge. 409 if already verified or pending. 429: 10/h. |
-| `POST /api/me/verification` | `multipart/form-data`: files `id_document`, `selfie`, `profile`, and text `document_number` (4 to 32 characters after normalising). 200 `MyVerification` with `status: pending`. 409 "Start a new verification first" (no live challenge). 422 for a bad image or number (`detail` is safe to show). 429: 5/h. |
+| `POST /api/me/verification` | `multipart/form-data`: files `id_document`, `selfie`, `profile`, and text `document_number` (4 to 32 characters after normalising). 200 `MyVerification` with `status: pending`. 409 "Start a new verification first" (no live challenge). 422 for a bad image or number: `detail` is a string for a rejected image or number, but a list (`[{loc, msg, type}]`) for a missing field or a `document_number` over 64 characters; `errorMessage` in `frontend/src/api.js` already turns both shapes into text. 429: 5/h. |
 | `GET /api/me/verification` | `{status, word, expires_at, submitted_at, decided_at, comment}`. `status` is `none`, `started`, `pending`, `approved`, `rejected`, `expired` or `revoked`. `word` and `expires_at` are set only while `started`. `comment` is the moderator's reason (rejected or revoked). A pending submission nobody reviews expires after 30 days. After rejected, expired or revoked the user can start again. |
 | `PATCH /api/me/settings` | `{only_verified_residents: bool}` → `{only_verified_residents}`. When on, the map shows only requests from verified authors. The current value is in `GET /api/auth/me`. |
 
@@ -218,7 +222,7 @@ A user proves their identity once and a moderator checks it by hand. A verified 
 | `GET /api/moderation/verifications` | The pending queue, oldest first: `[{id, user{id, display_name, roles}, submitted_at, duplicates[{id, display_name}]}]`. `duplicates` are other users who are already **verified (approved)** with the same document number: a warning sign. Pending or rejected submissions never appear. Your own submission and blocked users are left out. |
 | `GET /api/moderation/verifications/{id}` | Same fields plus `images`, the kinds still stored (`id_document`, `selfie`, `profile`). 404 unknown; 403 your own. |
 | `GET /api/moderation/verifications/{id}/images/{kind}` | The JPEG. **Every view is logged**; say so on screen. 404 once it is no longer pending. |
-| `PATCH /api/moderation/verifications/{id}` | `{decision: approved\|rejected, comment?}`. A comment (at most 500, not blank) is **required for `rejected`** (422 otherwise). Approving keeps only the profile photo and deletes the ID and selfie; rejecting deletes all images. 409 if already decided, or when approving a blocked user. 403 your own. |
+| `PATCH /api/moderation/verifications/{id}` | `{decision: approved\|rejected, comment?}`. A comment (at most 500, not blank) is **required for `rejected`** (422 otherwise). Approving keeps only the profile photo and deletes the ID and selfie; rejecting deletes all images. 409 if already decided, or when approving a blocked user. 403 your own. Returns 200 with the decided submission as `{id, user{id, display_name, roles}, submitted_at, duplicates[{id, display_name}]}` (same as a queue row, no `images`). |
 | `GET /api/moderation/verification-access-log?verification_id=&limit=&before=` | Who viewed which image; paged like section 9: `[{id, verification_id, moderator{id, display_name}, kind, accessed_at}]` |
 | `PATCH /api/moderation/users/{id}` | Also takes `{is_verified: false, verification_comment?}` to **revoke** the badge (comment at most 500, shown to the user as `comment`). Only `false` is accepted: the badge is granted by a review only. The photo is deleted and the user's claims on verified-only requests go back to the map. A moderator **block** also revokes; the automatic 3-report suspension does not. |
 

@@ -101,3 +101,9 @@ def test_settings_toggle(client):
     u = make_user(client, "resident")
     r = client.patch("/api/me/settings", json={"only_verified_residents": True}, headers=u["h"])
     assert r.status_code == 200 and r.json() == {"only_verified_residents": True}
+
+
+def test_whitespace_only_document_number_is_422(client):
+    u = make_user(client, "resident")
+    client.post(URL + "/start", headers=u["h"])
+    assert _submit(client, u, "				").status_code == 422
