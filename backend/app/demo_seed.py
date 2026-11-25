@@ -11,15 +11,18 @@ per volunteer, claim expiry...), so every demo flow behaves like the real one.
 """
 from __future__ import annotations
 
+import io
 import random
 import sys
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
+from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .database import Base
+from .images import encrypt, fingerprint, prepare_image
 from .geo import point_wkt, round_location
 from .models import (
     ClaimHistory,
@@ -28,7 +31,9 @@ from .models import (
     OpportunitySignup,
     Organization,
     Report,
+    IdentityVerification,
     User,
+    VerificationImage,
     VerificationLog,
 )
 from .security import hash_password
@@ -254,12 +259,82 @@ def _organizations(db: Session, ctx: dict) -> None:
         db.add(OpportunitySignup(opportunity_id=offers[key].id, volunteer_id=users[email].id))
 
 
+def _jpeg(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return prepare_image(buf.getvalue())
+
+
+def _avatar(initials: str, color: str) -> bytes:
+    """A drawn placeholder portrait (no real faces): a colored tile with initials."""
+    img = Image.new("RGB", (400, 400), color)
+    d = ImageDraw.Draw(img)
+    d.ellipse((140, 70, 260, 190), fill="white")
+    d.ellipse((90, 220, 310, 460), fill="white")
+    d.text((200, 330), initials, fill=color, font=ImageFont.load_default(60), anchor="mm")
+    return _jpeg(img)
+
+
+def _mock_id(name: str) -> bytes:
+    """A drawn ID-card lookalike marked DEMO."""
+    img = Image.new("RGB", (800, 500), "#dfe8f3")
+    d = ImageDraw.Draw(img)
+    d.rectangle((20, 20, 780, 480), outline="#33507a", width=6)
+    d.text((400, 130), "DEMO", fill="#33507a", font=ImageFont.load_default(120), anchor="mm")
+    d.rectangle((50, 220, 230, 440), fill="#b8c7da")
+    d.text((270, 270), name, fill="#222", font=ImageFont.load_default(40))
+    d.text((270, 340), "No. DEMO-000000", fill="#555", font=ImageFont.load_default(30))
+    return _jpeg(img)
+
+
+def _verifications(db: Session, ctx: dict) -> None:
+    """One account per verification state, and four verified-only requests."""
+    users, now = ctx["users"], ctx["now"]
+    mod = users["moderator@razom.demo"]
+    colors = ["#c0392b", "#2980b9", "#27ae60", "#8e44ad", "#d35400", "#16a085", "#7f8c8d"]
+    submitted = now - timedelta(days=1)
+
+    def add(email, status, number, kinds, **fields):
+        user = users[email]
+        v = IdentityVerification(
+            user_id=user.id, status=status, challenge_word="harbor",
+            challenge_expires_at=submitted + timedelta(days=1),
+            document_fingerprint=fingerprint(number) if number else None,
+            submitted_at=submitted, **fields)
+        db.add(v)
+        db.flush()
+        initials = "".join(w[0] for w in user.display_name.split()[:2]).upper()
+        color = colors[sum(map(ord, email)) % len(colors)]
+        pics = {"id_document": _mock_id(user.display_name), "selfie": _avatar(initials, color),
+                "profile": _avatar(initials, color)}
+        rows = {k: VerificationImage(verification_id=v.id, kind=k, data=encrypt(pics[k])) for k in kinds}
+        db.add_all(rows.values())
+        db.flush()
+        return user, rows
+
+    for n, email in enumerate(("volunteer@razom.demo", "resident@razom.demo")):
+        user, rows = add(email, "approved", f"DEMO-A{n}", ["profile"],
+                         decided_by=mod.id, decided_at=now - timedelta(hours=20))
+        user.is_verified, user.verified_at = True, now - timedelta(hours=20)
+        user.photo_image_id = rows["profile"].id
+    add("volunteer2@razom.demo", "pending", "DEMO-P1", ["id_document", "selfie", "profile"])
+    add("volunteer3@razom.demo", "rejected", "DEMO-R1", [], decided_by=mod.id,
+        decided_at=now - timedelta(hours=20), comment="The selfie does not show the challenge word.")
+    add("volunteer4@razom.demo", "revoked", "DEMO-V1", [], decided_by=mod.id,
+        decided_at=now - timedelta(hours=2), comment="Document reported as stolen.")
+    open_own = db.scalar(select(HelpRequest).where(
+        HelpRequest.author_id == users["resident@razom.demo"].id, HelpRequest.status == "open"))
+    for req in [*ctx["generated"][:3], open_own]:
+        req.verified_only = True
+
+
 SCENARIOS: list[Scenario] = [
     _accounts,
     _map_requests,
     _resident_journey,
     _moderation_queue,
     _organizations,
+    _verifications,
 ]
 
 

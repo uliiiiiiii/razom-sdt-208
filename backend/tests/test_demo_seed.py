@@ -175,3 +175,38 @@ def test_seed_after_a_demo_email_registered_through_the_api(client, db):
     assert r.status_code == 201
     seed_demo(db)
     assert get(client, "pending-org@razom.demo", "/api/me/organization")["org_name"] == "New Charity"
+
+
+def test_verification_states_seeded(client, db):
+    seed_demo(db)
+    got = {e: get(client, f"{e}@razom.demo", "/api/me/verification")
+           for e in ("volunteer", "resident", "volunteer2", "volunteer3", "volunteer4", "volunteer5")}
+    assert {k: v["status"] for k, v in got.items()} == {
+        "volunteer": "approved", "resident": "approved", "volunteer2": "pending",
+        "volunteer3": "rejected", "volunteer4": "revoked", "volunteer5": "none"}
+    assert got["volunteer3"]["comment"] == "The selfie does not show the challenge word."
+    assert got["volunteer4"]["comment"] == "Document reported as stolen."
+
+
+def test_moderator_can_review_seeded_submission(client, db):
+    seed_demo(db)
+    mod = login(client, "moderator@razom.demo")
+    queue = get(client, "moderator@razom.demo", "/api/moderation/verifications")
+    entry = next(q for q in queue if q["user"]["display_name"] == "Volunteer 2")
+    for kind in ("id_document", "selfie", "profile"):
+        r = client.get(f"/api/moderation/verifications/{entry['id']}/images/{kind}", headers=mod)
+        assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+        assert r.content[:2] == b"\xff\xd8"
+
+
+def test_verified_only_requests_seeded(client, db):
+    seed_demo(db)
+    items = get(client, "volunteer@razom.demo", "/api/map", lat=50.45, lng=30.52,
+                radius=50000, type="request")
+    only = [i for i in items if i["verified_only"]]
+    assert len(only) >= 4
+    r = client.patch(f"/api/requests/{only[0]['id']}/claim", headers=login(client, "volunteer5@razom.demo"))
+    assert r.status_code == 403
+    vol_id = get(client, "volunteer@razom.demo", "/api/auth/me")["id"]
+    r = client.get(f"/api/users/{vol_id}/photo", headers=login(client, "resident@razom.demo"))
+    assert r.status_code == 200
