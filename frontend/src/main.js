@@ -10,11 +10,16 @@ import "@fontsource/manrope/cyrillic-600.css";
 import "@fontsource/manrope/cyrillic-700.css";
 import "./styles.css";
 import { getToken } from "./api.js";
-import { renderUserBox, requireAuth } from "./auth.js";
+import { renderUserBox, requireAuth, refreshMe } from "./auth.js";
 import { renderLogin } from "./views/login.js";
 import { renderRegister } from "./views/register.js";
 import { renderMap } from "./views/map.js";
 import { renderCreate } from "./views/create.js";
+import { renderRequest } from "./views/request.js";
+import { renderOrganization } from "./views/organization.js";
+import { renderOpportunity } from "./views/opportunity.js";
+import { renderVerification } from "./views/verification.js";
+import { renderModeration } from "./views/moderation.js";
 import { icon } from "./icons.js";
 
 const THEME_KEY = "razom_theme";
@@ -43,31 +48,45 @@ function initTheme() {
 
 initTheme();
 
-const routes = {
-  "/login": renderLogin,
-  "/register": renderRegister,
-  "/create": renderCreate,
-  "/": renderMap,
-};
+// routes with a parameter are functions of the param
+function matchRoute(path) {
+  if (path === "/login") return { view: renderLogin };
+  if (path === "/register") return { view: renderRegister };
+  if (path === "/create") return { view: renderCreate };
+  if (path === "/verification") return { view: renderVerification };
+  if (path === "/organization") return { view: renderOrganization };
+  if (path === "/moderation") return { view: renderModeration };
+  let m = path.match(/^\/requests\/(\d+)$/);
+  if (m) return { view: renderRequest, param: m[1] };
+  m = path.match(/^\/opportunities\/(\d+)$/);
+  if (m) return { view: renderOpportunity, param: m[1] };
+  if (path === "/") return { view: renderMap };
+  return null;
+}
 
-function router() {
+async function router() {
   const path = location.hash.slice(1) || "/";
   const app = document.getElementById("app");
-  const view = routes[path];
-  if (!view) {
+  const match = matchRoute(path);
+  if (!match) {
     location.hash = "#/";
     return;
   }
-  if ((path === "/login" || path === "/register") && getToken()) {
+  const isAuthScreen = path === "/login" || path === "/register";
+  if (isAuthScreen && getToken()) {
     location.hash = "#/";
     return;
   }
   document.body.dataset.mode =
-    path === "/" ? "map" : path === "/login" || path === "/register" ? "auth" : "page";
+    path === "/" ? "map" : isAuthScreen ? "auth" : "page";
   app.innerHTML = "";
-  if (path !== "/login" && path !== "/register" && !requireAuth()) return;
-  view(app);
+  if (!isAuthScreen) {
+    if (!requireAuth()) return;
+    // roles come from the DB, not the 24 h token: refresh on every navigation
+    await refreshMe();
+  }
   renderUserBox();
+  match.view(app, match.param);
 }
 
 window.addEventListener("hashchange", router);
