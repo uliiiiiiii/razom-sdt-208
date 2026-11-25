@@ -199,6 +199,14 @@ async function orgsTab(body) {
       list.querySelectorAll("[data-stats]").forEach((b) => b.onclick = async () => {
         try {
           const s = await API.get(`/moderation/organizations/${b.dataset.stats}/stats`);
+          alert(`${s.opportunities_total} offers, ${s.signups_total} sign-ups, ${s.attended_total} attended, ${s.past_opportunities} past.`);
+        } catch (ex) { alert(ex.message); }
+      });
+    } catch (ex) { list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
+  }
+  load();
+}
+
 
 async function usersTab(body) {
   let before = null;
@@ -255,7 +263,6 @@ async function usersTab(body) {
   }
   moreBtn.onclick = load;
   load();
-}
 
 async function verifyTab(body, app) {
   body.innerHTML = `<div id="verifyList"></div>`;
@@ -276,6 +283,8 @@ async function verifyTab(body, app) {
       </div>`).join("");
     list.querySelectorAll("[data-vr]").forEach((b) => b.onclick = () => reviewVerification(body, b.dataset.vr, app));
   } catch (ex) { list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
+}
+
 }
 
 async function reviewVerification(body, vid, app) {
@@ -315,6 +324,15 @@ async function reviewVerification(body, vid, app) {
       let comment = null;
       if (decision === "rejected") {
         comment = window.prompt("Reason for rejection (required):");
+        if (!comment || !comment.trim()) { err.textContent = "A comment is required when rejecting."; err.hidden = false; return; }
+      }
+      try { await API.patch(`/moderation/verifications/${vid}`, { decision, comment }); photos.forEach((p) => p.revoke()); tab = "verify"; draw(app); }
+      catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    });
+  } catch (ex) {
+    body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+  }
+}
 
 async function logTab(body) {
   let before = null;
@@ -380,22 +398,4 @@ async function statsTab(body) {
   } catch (ex) { body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
 }
 
-        if (!comment || !comment.trim()) { err.textContent = "A comment is required when rejecting."; err.hidden = false; return; }
-      }
-      try { await API.patch(`/moderation/verifications/${vid}`, { decision, comment }); photos.forEach((p) => p.revoke()); tab = "verify"; draw(app); }
-      catch (ex) { err.textContent = ex.message; err.hidden = false; }
-    });
-  } catch (ex) {
-    body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
-  }
-}
-
-
-          alert(`${s.opportunities_total} offers, ${s.signups_total} sign-ups, ${s.attended_total} attended, ${s.past_opportunities} past.`);
-        } catch (ex) { alert(ex.message); }
-      });
-    } catch (ex) { list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
-  }
-  load();
-}
 
