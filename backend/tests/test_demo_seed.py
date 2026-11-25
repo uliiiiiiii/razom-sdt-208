@@ -64,9 +64,9 @@ def test_resumes_after_partial_seed(db):
     assert db.query(User).filter_by(email="resident@razom.demo").one()
 
 
-def test_seed_is_idempotent(db):
+def test_seed_can_run_twice(db):
     seed_demo(db)
-    seed_demo(db)  # no duplicate-email error
+    seed_demo(db)  # starts over: no duplicate-email error
 
 
 def test_seed_refuses_non_demo_database(client, db):
@@ -155,19 +155,23 @@ def test_organizations_in_every_state(client, db):
     assert len(get(client, "volunteer@razom.demo", "/api/me/signups")) >= 2
 
 
-def test_reset_replaces_an_old_demo_seed(db):
+def test_rerun_restores_the_demo_after_claims_expire(client, db):
     from sqlalchemy import text
 
     seed_demo(db)
-    db.execute(text("DELETE FROM help_requests"))  # stands in for an older seed's data
+    db.execute(text("UPDATE help_requests SET claimed_at = claimed_at - interval '13 hours'"))
     db.commit()
-    seed_demo(db)  # without reset: already seeded, left alone
-    assert db.scalar(text("SELECT count(*) FROM help_requests")) == 0
-    seed_demo(db, reset=True)
-    assert db.scalar(text("SELECT count(*) FROM help_requests")) == 46
+    get(client, "volunteer2@razom.demo", "/api/map", lat=50.45, lng=30.52)  # expires the claim
+    seed_demo(db)
+    mine = get(client, "resident@razom.demo", "/api/me/requests")
+    assert any(r["status"] == "claimed" and not r["accepted"] for r in mine)
 
 
-def test_reset_still_refuses_real_users(client, db):
-    make_user(client, "resident")
-    with pytest.raises(RuntimeError):
-        seed_demo(db, reset=True)
+def test_seed_after_a_demo_email_registered_through_the_api(client, db):
+    r = client.post("/api/auth/register", json={
+        "email": "pending-org@razom.demo", "password": "secret12", "display_name": "X",
+        "is_organization": True, "org_name": "Squatter",
+    })
+    assert r.status_code == 201
+    seed_demo(db)
+    assert get(client, "pending-org@razom.demo", "/api/me/organization")["org_name"] == "New Charity"

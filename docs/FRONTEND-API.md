@@ -11,10 +11,10 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -r requirements.txt
 export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 uvicorn app.main:app --reload --port 8000    # creates/updates the schema on start
-python -m app.demo_seed                      # demo accounts + content (dev only); add --reset to replace older demo data
+python -m app.demo_seed                      # demo accounts + content (dev only); re-run before a demo, it wipes and seeds again
 ```
 
-Demo accounts (password `demo-pass-123`). Each one exists to show a particular screen or state:
+Demo accounts (password `demo-pass-123`). Each one exists to show a particular screen or state. Some states are time-limited (a claim waiting for acceptance expires after 12 hours), so re-run the seeder before testing:
 
 | Email | What it has |
 |---|---|

@@ -1,11 +1,10 @@
 """Demo data for local development: a lived-in Kyiv map plus accounts in
 every state, so each screen and flow has something to show.
 
-    python -m app.demo_seed            # skips if demo data is already there
-    python -m app.demo_seed --reset    # wipes a demo-only database and seeds again
+    python -m app.demo_seed    # re-run before a demo: it wipes and seeds again
 
-DEVELOPMENT ONLY: every account shares a published password. The script
-refuses to run on a database that has any non-demo user.
+DEVELOPMENT ONLY: every account shares a published password. Each run wipes
+the database first, so it refuses to run on one that has any non-demo user.
 
 The data obeys the app's own rules (3 active requests per resident, 2 claims
 per volunteer, claim expiry...), so every demo flow behaves like the real one.
@@ -140,15 +139,13 @@ def new_request(author: User, category: str, title: str, lat: float, lng: float,
 
 
 def _accounts(db: Session, ctx: dict) -> None:
-    """Creates whichever demo accounts are missing, so a half-finished seed resumes."""
-    existing = {u.email: u for u in db.scalars(select(User).where(User.email.like(f"%{DEMO_DOMAIN}")))}
     password_hash = hash_password(DEMO_PASSWORD)
-    for email, (name, flags) in _all_accounts().items():
-        if email not in existing:
-            existing[email] = User(email=email, password_hash=password_hash, display_name=name, **flags)
-            db.add(existing[email])
+    ctx["users"] = {
+        email: User(email=email, password_hash=password_hash, display_name=name, **flags)
+        for email, (name, flags) in _all_accounts().items()
+    }
+    db.add_all(ctx["users"].values())
     db.flush()
-    ctx["users"] = existing
 
 
 def _map_requests(db: Session, ctx: dict) -> None:
@@ -266,16 +263,14 @@ SCENARIOS: list[Scenario] = [
 ]
 
 
-def seed_demo(db: Session, reset: bool = False) -> None:
-    """reset=True wipes every table first (allowed only because every user is a
-    demo user), e.g. to replace data left by an older version of this script."""
+def seed_demo(db: Session) -> None:
+    """Wipes the database and seeds it fresh, so a re-run always restores a
+    working demo (waiting claims expire after 12 h, "fresh" requests age).
+    Allowed only because every user is a demo user."""
     if db.scalar(select(User.id).where(User.email.not_like(f"%{DEMO_DOMAIN}")).limit(1)):
         raise RuntimeError("Refusing to seed demo data: the database has real (non-demo) users")
-    if reset:
-        tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
-        db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
-    elif db.scalar(select(User.id).where(User.email == "resident@razom.demo")):
-        return  # already seeded (use --reset to start over)
+    tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
+    db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     ctx: dict = {"now": datetime.now(timezone.utc)}
     for scenario in SCENARIOS:
         scenario(db, ctx)
@@ -290,7 +285,7 @@ if __name__ == "__main__":
     upgrade_to_head(settings.database_url)  # works even before the server ever ran
     with SessionLocal() as session:
         try:
-            seed_demo(session, reset="--reset" in sys.argv)
+            seed_demo(session)
         except RuntimeError as exc:
             sys.exit(str(exc))
     print(f"Demo accounts (password: {DEMO_PASSWORD}):")
