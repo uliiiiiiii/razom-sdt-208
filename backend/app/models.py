@@ -18,10 +18,12 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    select,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from .database import Base
+from .geo import lat_expr, lng_expr
 
 
 class User(Base):
@@ -238,3 +240,22 @@ class VerificationLog(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+
+
+# Coordinates (and the sign-up count) load in the same SELECT as the row, so
+# serializing a list doesn't cost one extra query per item. Like any loaded
+# attribute they are stale until the next commit/refresh.
+_req, _opp = HelpRequest.__table__.c, Opportunity.__table__.c
+HelpRequest.exact_lat = column_property(lat_expr(_req.location))
+HelpRequest.exact_lng = column_property(lng_expr(_req.location))
+HelpRequest.approx_lat = column_property(lat_expr(_req.approx_location))
+HelpRequest.approx_lng = column_property(lng_expr(_req.approx_location))
+Opportunity.lat = column_property(lat_expr(_opp.location))
+Opportunity.lng = column_property(lng_expr(_opp.location))
+# display only: under concurrent sign-ups check the count with a fresh query
+Opportunity.slots_taken = column_property(
+    select(func.count(OpportunitySignup.id))
+    .where(OpportunitySignup.opportunity_id == _opp.id)
+    .correlate_except(OpportunitySignup)
+    .scalar_subquery()
+)

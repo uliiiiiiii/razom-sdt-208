@@ -61,3 +61,25 @@ def test_moderator_own_report_does_not_reveal_address(client):
     other = report(client, make_user(client, "volunteer"), "request", rid).json()
     detail = client.get(f"/api/moderation/reports/{other['id']}", headers=mod["h"]).json()
     assert detail["target"]["address"] == "Khreshchatyk 1, apt 5"
+
+
+def test_repeated_views_log_one_access_per_hour(client):
+    from conftest import claim_ref
+
+    res, vol = make_user(client, "resident"), make_user(client, "volunteer")
+    rid = new_request(client, res).json()["id"]
+    client.patch(f"/api/requests/{rid}/claim", headers=vol["h"])
+    client.patch(f"/api/requests/{rid}/accept", json=claim_ref(client, res, rid), headers=res["h"])
+    for _ in range(3):
+        assert client.get(f"/api/requests/{rid}", headers=vol["h"]).json()["address"]
+        assert client.get("/api/me/claims", headers=vol["h"]).json()[0]["address"]
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("SELECT user_id, via FROM address_access_log WHERE request_id = :r"), {"r": rid}
+        ).all()
+        assert rows == [(vol["id"], "claim")]
+        # an hour later the next view is logged again
+        conn.execute(text("UPDATE address_access_log SET accessed_at = now() - interval '61 minutes'"))
+    client.get(f"/api/requests/{rid}", headers=vol["h"])
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM address_access_log")) == 2

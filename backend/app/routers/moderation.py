@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from ..database import get_db
 from ..deps import require_roles
@@ -62,13 +62,23 @@ def list_reports(
     status: Literal["open", "dismissed", "actioned"] = "open",
     db: Session = Depends(get_db),
 ) -> list[dict]:
+    other = aliased(Report)
+    open_on_target = (
+        select(func.count(other.id))
+        .where(
+            other.target_type == Report.target_type,
+            other.target_id == Report.target_id,
+            other.status == "open",
+        )
+        .scalar_subquery()
+    )
     rows = db.execute(
-        select(Report, User)
+        select(Report, User, open_on_target)
         .join(User, User.id == Report.reporter_id)
         .where(Report.status == status)
         .order_by(Report.created_at.desc(), Report.id.desc())
     ).all()
-    return [_report_out(db, r, u) for r, u in rows]
+    return [_report_out(db, r, u, n) for r, u, n in rows]
 
 
 @router.get("/reports/{report_id}", response_model=ReportDetail)
@@ -274,7 +284,7 @@ def _get_report(db: Session, report_id: int) -> Report:
     return report
 
 
-def _report_out(db: Session, report: Report, reporter: User) -> dict:
+def _report_out(db: Session, report: Report, reporter: User, open_count: int | None = None) -> dict:
     return {
         "id": report.id,
         "target_type": report.target_type,
@@ -283,7 +293,9 @@ def _report_out(db: Session, report: Report, reporter: User) -> dict:
         "status": report.status,
         "created_at": report.created_at,
         "reporter": {"id": reporter.id, "display_name": reporter.display_name},
-        "open_reports_on_target": open_report_count(db, report.target_type, report.target_id),
+        "open_reports_on_target": open_count
+        if open_count is not None
+        else open_report_count(db, report.target_type, report.target_id),
     }
 
 
