@@ -33,7 +33,7 @@ export function renderCreate(app) {
         <textarea id="description" name="description" rows="4" required maxlength="2000" placeholder="Where to meet, what to bring, when it matters."></textarea>
         <label for="address">Address</label>
         <input id="address" name="address" maxlength="300" placeholder="Street, building, apartment" />
-        <div id="err" class="form-error" hidden></div>
+        <div id="err" class="form-error" role="alert" hidden></div>
         <div class="compose-actions">
           <button class="btn" type="submit">Create request</button>
           <a href="#/" class="btn secondary">Cancel</a>

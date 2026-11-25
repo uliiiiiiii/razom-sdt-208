@@ -13,7 +13,7 @@ export function renderLogin(app) {
           <input id="email" type="email" name="email" required autocomplete="username" placeholder="you@example.com" />
           <label for="password">Password</label>
           <input id="password" type="password" name="password" required autocomplete="current-password" placeholder="Your password" />
-          <div id="err" class="form-error" hidden></div>
+          <div id="err" class="form-error" role="alert" hidden></div>
           <button class="btn btn-block" type="submit" style="margin-top:16px">Log in</button>
           <p class="switch">New here? <a href="#/register">Create an account</a></p>
         </form>

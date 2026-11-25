@@ -38,7 +38,7 @@ export function renderRegister(app) {
             <label for="org_name">Organization name</label>
             <input id="org_name" name="org_name" placeholder="Help Kyiv" />
           </div>
-          <div id="err" class="form-error" hidden></div>
+          <div id="err" class="form-error" role="alert" hidden></div>
           <button class="btn btn-block" type="submit" style="margin-top:16px">Create account</button>
           <p class="switch">Already have an account? <a href="#/login">Log in</a></p>
         </form>

@@ -153,7 +153,7 @@ export function renderMap(app) {
             <button type="button" class="btn btn-block" id="searchBtn">Search this area</button>
             <button type="button" class="btn secondary btn-block" id="hereBtn">${icon("locate", 16)} Use map center</button>
           </div>
-          <p class="form-error" id="searchMsg" hidden></p>
+          <p class="form-error" role="alert" id="searchMsg" hidden></p>
         </section>
     </div>
   `;
@@ -415,7 +415,7 @@ async function openDetail(id) {
       ${photoHolder}
       ${hidden}
       ${privacy}
-      <div id="detailError" class="form-error" hidden></div>
+      <div id="detailError" class="form-error" role="alert" hidden></div>
       <div class="actions">${buttons.join("") || '<span class="quiet-line">Nothing for you to do on this one.</span>'}</div>
     `;
     // load the other party's photo via fetch + blob URL (CSP: no plain <img src>)
@@ -430,7 +430,7 @@ async function openDetail(id) {
       }
     }
   } catch (ex) {
-    body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+    body.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
   }
 }
 function showActionError(message) {

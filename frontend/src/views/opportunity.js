@@ -5,7 +5,7 @@ import { icon } from "../icons.js";
 import { categoryLabel } from "../ui.js";
 
 export async function renderOpportunity(app, id) {
-  app.innerHTML = `<div class="page"><p class="empty">Loading…</p></div>`;
+  app.innerHTML = `<div class="page"><p class="empty" role="status" aria-live="polite">Loading…</p></div>`;
   const page = app.querySelector(".page");
   const user = getUser();
   try {
@@ -44,7 +44,7 @@ export async function renderOpportunity(app, id) {
           <div class="meta-row">${icon("users", 16)}<span>${o.slots_taken}/${o.slots_total} signed up</span></div>
           <div class="meta-row">${icon("list", 16)}<span>${esc(categoryLabel(o.category))}</span></div>
         </div>
-        <div id="oErr" class="form-error" hidden></div>
+        <div id="oErr" class="form-error" role="alert" hidden></div>
         <div class="actions" style="margin-top:14px">${actions}</div>
       </section>`;
     const signupBtn = page.querySelector("#signupBtn");
@@ -72,6 +72,6 @@ export async function renderOpportunity(app, id) {
       }
     };
   } catch (ex) {
-    page.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+    page.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
   }
 }

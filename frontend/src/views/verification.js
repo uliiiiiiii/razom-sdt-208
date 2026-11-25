@@ -15,11 +15,11 @@ const STATUS_COPY = {
 };
 
 export async function renderVerification(app) {
-  app.innerHTML = `<div class="page"><p class="empty">Loading…</p></div>`;
+  app.innerHTML = `<div class="page"><p class="empty" role="status" aria-live="polite">Loading…</p></div>`;
   const page = app.querySelector(".page");
   let v;
   try { v = await API.get("/me/verification"); }
-  catch (ex) { page.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; return; }
+  catch (ex) { page.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; return; }
 
   const canStart = v.status === "none" || ["rejected", "expired", "revoked"].includes(v.status);
   const canSubmit = v.status === "started";
@@ -54,7 +54,7 @@ export async function renderVerification(app) {
           <label for="v-docnum">Document number</label>
           <input id="v-docnum" name="document_number" required minlength="4" maxlength="32" placeholder="e.g. AB123456" />
           <p class="field-hint">4–32 characters. Stored only as a fingerprint to flag duplicates.</p>
-          <div id="vErr" class="form-error" hidden></div>
+          <div id="vErr" class="form-error" role="alert" hidden></div>
           <div class="compose-actions" style="margin-top:16px">
             <button class="btn" type="submit">Submit for review</button>
           </div>

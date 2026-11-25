@@ -21,13 +21,13 @@ const STATUS_LABEL = { open: "Open", closed: "Closed" };
 
 export async function renderOrganization(app) {
   if (pickerMap) { pickerMap.remove(); pickerMap = null; }
-  app.innerHTML = `<div class="page"><p class="empty">Loading…</p></div>`;
+  app.innerHTML = `<div class="page"><p class="empty" role="status" aria-live="polite">Loading…</p></div>`;
   const page = app.querySelector(".page");
   let org;
   try {
     org = await API.get("/me/organization");
   } catch (ex) {
-    page.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+    page.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
     return;
   }
 
@@ -114,7 +114,7 @@ async function loadOpps(page, org) {
     });
     list.querySelectorAll("[data-signups]").forEach((b) => b.onclick = () => showSignups(page, b.dataset.signups));
   } catch (ex) {
-    list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+    list.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
   }
 }
 
@@ -139,7 +139,7 @@ function showForm(page, opp, org) {
       <p class="field-hint">Pick a future date and time. Your local timezone is used.</p>
       <div class="compose-map" style="height:260px;margin-top:12px"><div id="pickerMap"></div></div>
       <div id="coords" class="field-hint">Click the map to place the pin.</div>
-      <div id="ferr" class="form-error" hidden></div>
+      <div id="ferr" class="form-error" role="alert" hidden></div>
       <div class="compose-actions" style="margin-top:16px">
         <button class="btn" type="submit">${editing ? "Save changes" : "Publish"}</button>
         <button class="btn secondary" type="button" id="fCancel">Cancel</button>
@@ -212,7 +212,7 @@ function showForm(page, opp, org) {
 async function showSignups(page, oppId) {
   const card = page.querySelector("#formCard");
   card.hidden = false;
-  card.innerHTML = `<h2>Sign-ups</h2><p class="empty">Loading…</p>`;
+  card.innerHTML = `<h2>Sign-ups</h2><p class="empty" role="status" aria-live="polite">Loading…</p>`;
   try {
     const opp = await API.get(`/opportunities/${oppId}`);
     const started = new Date(opp.start_time) <= new Date();
@@ -244,7 +244,7 @@ async function showSignups(page, oppId) {
     });
     card.querySelector("#ssBack").onclick = () => { card.hidden = true; };
   } catch (ex) {
-    card.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+    card.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
   }
 }
 

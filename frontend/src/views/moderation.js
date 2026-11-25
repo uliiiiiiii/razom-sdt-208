@@ -9,7 +9,7 @@ let tab = "reports";
 let reportStatus = "open";
 
 export async function renderModeration(app) {
-  app.innerHTML = `<div class="page"><p class="empty">Loading…</p></div>`;
+  app.innerHTML = `<div class="page"><p class="empty" role="status" aria-live="polite">Loading…</p></div>`;
   draw(app);
 }
 
@@ -80,14 +80,14 @@ async function reportsTab(body, app) {
       moreBtn.hidden = rows.length < LIMIT;
       if (rows.length) before = rows[rows.length - 1].id;
       list.querySelectorAll("[data-rep]").forEach((b) => b.onclick = () => reviewReport(body, b.dataset.rep, app));
-    } catch (ex) { list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
+    } catch (ex) { list.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; }
   }
   moreBtn.onclick = load;
   load();
 }
 
 async function reviewReport(body, reportId, app) {
-  body.innerHTML = `<p class="empty">Loading…</p>`;
+  body.innerHTML = `<p class="empty" role="status" aria-live="polite">Loading…</p>`;
   try {
     const r = await API.get(`/moderation/reports/${reportId}`);
     let targetHtml = "<p class=\"empty\">Target no longer exists.</p>";
@@ -138,7 +138,7 @@ async function reviewReport(body, reportId, app) {
             <button class="btn secondary" data-d="hide">Hide content</button>
             <button class="btn danger" data-d="block">Block user</button>
           </div>` : `<p class="field-hint">This report was already resolved.</p>`}
-        <div id="repErr" class="form-error" hidden></div>
+        <div id="repErr" class="form-error" role="alert" hidden></div>
       </section>`;
     body.querySelector("#repBack").onclick = () => { tab = "reports"; draw(app); };
     body.querySelectorAll("[data-d]").forEach((b) => b.onclick = async () => {
@@ -148,7 +148,7 @@ async function reviewReport(body, reportId, app) {
       catch (ex) { err.textContent = ex.message; err.hidden = false; }
     });
   } catch (ex) {
-    body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+    body.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
   }
 }
 
@@ -170,7 +170,7 @@ async function orgsTab(body) {
   });
   const list = body.querySelector("#orgList");
   async function load() {
-    list.innerHTML = `<p class="empty">Loading…</p>`;
+    list.innerHTML = `<p class="empty" role="status" aria-live="polite">Loading…</p>`;
     try {
       const rows = await API.get(`/moderation/organizations?status=${status}`);
       if (!rows.length) { list.innerHTML = `<p class="empty">No ${status} organizations.</p>`; return; }
@@ -202,7 +202,7 @@ async function orgsTab(body) {
           alert(`${s.opportunities_total} offers, ${s.signups_total} sign-ups, ${s.attended_total} attended, ${s.past_opportunities} past.`);
         } catch (ex) { alert(ex.message); }
       });
-    } catch (ex) { list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
+    } catch (ex) { list.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; }
   }
   load();
 }
@@ -259,7 +259,7 @@ async function usersTab(body) {
         try { await API.patch(`/moderation/users/${b.dataset.revoke}`, { is_verified: false, verification_comment: comment }); before = null; list.innerHTML = ""; load(); }
         catch (ex) { alert(ex.message); }
       });
-    } catch (ex) { list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
+    } catch (ex) { list.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; }
   }
   moreBtn.onclick = load;
   load();
@@ -282,13 +282,13 @@ async function verifyTab(body, app) {
         </div>
       </div>`).join("");
     list.querySelectorAll("[data-vr]").forEach((b) => b.onclick = () => reviewVerification(body, b.dataset.vr, app));
-  } catch (ex) { list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
+  } catch (ex) { list.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; }
 }
 
 }
 
 async function reviewVerification(body, vid, app) {
-  body.innerHTML = `<p class="empty">Loading…</p>`;
+  body.innerHTML = `<p class="empty" role="status" aria-live="polite">Loading…</p>`;
   try {
     const r = await API.get(`/moderation/verifications/${vid}`);
     const kinds = r.images || [];
@@ -307,7 +307,7 @@ async function reviewVerification(body, vid, app) {
           <button class="btn" data-dec="approved">Approve</button>
           <button class="btn danger" data-dec="rejected">Reject</button>
         </div>
-        <div id="vErr" class="form-error" hidden></div>
+        <div id="vErr" class="form-error" role="alert" hidden></div>
       </section>`;
     body.querySelector("#vBack").onclick = () => { tab = "verify"; draw(app); };
     const photos = [];
@@ -330,7 +330,7 @@ async function reviewVerification(body, vid, app) {
       catch (ex) { err.textContent = ex.message; err.hidden = false; }
     });
   } catch (ex) {
-    body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+    body.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
   }
 }
 
@@ -367,14 +367,14 @@ async function logTab(body) {
         </div>`).join(""));
       moreBtn.hidden = rows.length < LIMIT;
       if (rows.length) before = rows[rows.length - 1].id;
-    } catch (ex) { list.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
+    } catch (ex) { list.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; }
   }
   moreBtn.onclick = load;
   load();
 }
 
 async function statsTab(body) {
-  body.innerHTML = `<p class="empty">Loading…</p>`;
+  body.innerHTML = `<p class="empty" role="status" aria-live="polite">Loading…</p>`;
   try {
     const s = await API.get("/moderation/stats");
     body.innerHTML = `
@@ -395,7 +395,7 @@ async function statsTab(body) {
           ${Object.entries(s.requests_by_category || {}).map(([k, v]) => `<div class="stat"><div class="stat-n">${v}</div><div class="stat-l">${esc(k)}</div></div>`).join("") || '<p class="empty">None</p>'}
         </div>
       </section>`;
-  } catch (ex) { body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`; }
+  } catch (ex) { body.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; }
 }
 
 

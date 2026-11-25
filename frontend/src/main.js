@@ -87,6 +87,9 @@ async function router() {
   }
   renderUserBox();
   match.view(app, match.param);
+  // Move focus to the main content so screen readers announce the new view
+  app.setAttribute("tabindex", "-1");
+  app.focus({ preventScroll: true });
 }
 
 window.addEventListener("hashchange", router);

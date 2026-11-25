@@ -8,7 +8,7 @@ import { CATEGORY_ICON, categoryLabel, statusLabel, pinCat } from "../ui.js";
 const STATUS_CLASS = new Set(["open", "claimed", "completed", "confirmed", "cancelled"]);
 
 export async function renderRequest(app, id) {
-  app.innerHTML = `<div class="page"><p class="empty">Loading…</p></div>`;
+  app.innerHTML = `<div class="page"><p class="empty" role="status" aria-live="polite">Loading…</p></div>`;
   const user = getUser();
   const page = app.querySelector(".page");
   try {
@@ -74,7 +74,7 @@ export async function renderRequest(app, id) {
         </div>
         ${photoHolder}
         ${hidden}
-        <div id="detailError" class="form-error" hidden></div>
+        <div id="detailError" class="form-error" role="alert" hidden></div>
         <div class="actions">${buttons.join("") || '<span class="quiet-line">Nothing for you to do on this one.</span>'}</div>
       </section>
     `;
@@ -92,7 +92,7 @@ export async function renderRequest(app, id) {
       if (btn) act(btn, id);
     });
   } catch (ex) {
-    page.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
+    page.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
   }
 }
 
