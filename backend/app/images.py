@@ -15,8 +15,9 @@ from app.config import settings
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 MAX_SIDE = 1600
 MAX_PIXELS = 40_000_000
-_FORMATS = {"JPEG", "PNG", "WEBP"}
+_FORMATS = {"JPEG", "MPO", "PNG", "WEBP"}
 _UNSUPPORTED = "Use a JPEG, PNG or WebP image"
+_TOO_MANY_PIXELS = "Image is too large (40 megapixels maximum)"
 
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
@@ -45,19 +46,23 @@ def prepare_image(data: bytes) -> bytes:
             img = Image.open(io.BytesIO(data))
             if img.format not in _FORMATS:
                 raise ImageRejected(_UNSUPPORTED)
+            # Deterministic check: the warnings filter above is process-global, not thread-safe.
+            if img.width * img.height > MAX_PIXELS:
+                raise ImageRejected(_TOO_MANY_PIXELS)
             img.load()
     except ImageRejected:
         raise
     except Image.DecompressionBombError:
-        raise ImageRejected("Image is too large (40 megapixels maximum)") from None
+        raise ImageRejected(_TOO_MANY_PIXELS) from None
     except Image.DecompressionBombWarning:
-        raise ImageRejected("Image is too large (40 megapixels maximum)") from None
+        raise ImageRejected(_TOO_MANY_PIXELS) from None
     except Exception:
         raise ImageRejected(_UNSUPPORTED) from None
     img = ImageOps.exif_transpose(img).convert("RGB")
     img.thumbnail((MAX_SIDE, MAX_SIDE))
+    img.info.clear()  # convert() copies info; the JPEG saver would write comment/ICC/XMP from it
     out = io.BytesIO()
-    img.save(out, format="JPEG", quality=85)  # no exif=, so no metadata is written
+    img.save(out, format="JPEG", quality=85)
     return out.getvalue()
 
 

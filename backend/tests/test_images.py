@@ -1,7 +1,7 @@
 import io
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageCms
 
 from app.config import get_settings
 from app.images import (
@@ -22,6 +22,41 @@ def test_output_is_jpeg_without_metadata():
     out = prepare_image(src)
     assert out.startswith(b"\xff\xd8")
     assert len(Image.open(io.BytesIO(out)).getexif()) == 0
+
+
+def test_comment_icc_and_xmp_are_stripped():
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), "red").save(
+        buf, format="JPEG", comment=b"SECRET-COMMENT",
+        icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes(),
+        xmp=b"<x:xmpmeta>SECRET-XMP</x:xmpmeta>",
+    )
+    src = buf.getvalue()
+    assert b"SECRET-COMMENT" in src and b"SECRET-XMP" in src
+    out = prepare_image(src)
+    info = Image.open(io.BytesIO(out)).info
+    for key in ("comment", "icc_profile", "xmp"):
+        assert key not in info
+    assert b"SECRET-COMMENT" not in out and b"SECRET-XMP" not in out
+
+
+def test_multi_picture_jpeg_is_accepted():
+    buf = io.BytesIO()
+    a, b = Image.new("RGB", (64, 64), "red"), Image.new("RGB", (64, 64), "blue")
+    a.save(buf, format="MPO", save_all=True, append_images=[b])
+    assert Image.open(io.BytesIO(buf.getvalue())).format == "MPO"
+    assert prepare_image(buf.getvalue()).startswith(b"\xff\xd8")
+
+
+@pytest.mark.filterwarnings("ignore::PIL.Image.DecompressionBombWarning")
+def test_pixel_check_does_not_rely_on_warnings(monkeypatch):
+    # 42 MP is above the limit; ignore the bomb warning so only the explicit check can reject it.
+    import warnings
+
+    monkeypatch.setattr(warnings, "simplefilter", lambda *a, **k: None)
+    with pytest.raises(ImageRejected) as exc:
+        prepare_image(_huge_png())
+    assert str(exc.value) == "Image is too large (40 megapixels maximum)"
 
 
 def test_downscales_longest_side():
