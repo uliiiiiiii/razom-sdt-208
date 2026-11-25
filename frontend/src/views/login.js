@@ -33,7 +33,15 @@ export function renderLogin(app) {
         password: f.get("password"),
       });
       setToken(res.access_token);
-      setUser({ id: res.user_id, display_name: res.display_name, roles: res.roles });
+      // roles/is_verified come from the DB, not the 24 h token
+      const me = await API.get("/auth/me");
+      setUser({
+        id: me.id,
+        display_name: me.display_name,
+        roles: me.roles,
+        is_verified: me.is_verified,
+        only_verified_residents: me.only_verified_residents,
+      });
       location.hash = "#/";
     } catch (ex) {
       err.textContent = ex.message;

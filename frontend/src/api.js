@@ -104,4 +104,31 @@ export const API = {
   patch: (p, body) =>
     req(p, { method: "PATCH", body: body === undefined ? undefined : JSON.stringify(body) }),
   del: (p) => req(p, { method: "DELETE" }),
+  // multipart/form-data (verification upload); FormData sets its own Content-Type
+  postForm: (p, form) => req(p, { method: "POST", body: form }),
 };
+
+// Profile / verification photos need the Authorization header, so a plain <img src>
+// can't load them. Fetch + blob URL is allowed by the CSP. Call revokeObjectURL when
+// the element is gone (cleanup handled by the caller via loadPhoto().revoke()).
+export function loadPhoto(path) {
+  let url = null;
+  let done = false;
+  const promise = (async () => {
+    const t = getToken();
+    if (!path || !t) return null;
+    const res = await fetch(BASE + path, { headers: { Authorization: `Bearer ${t}` } });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    if (done) return null; // already cleaned up before it arrived
+    url = URL.createObjectURL(blob);
+    return url;
+  })();
+  return {
+    then: (cb) => promise.then(cb),
+    revoke() {
+      done = true;
+      if (url) URL.revokeObjectURL(url);
+    },
+  };
+}

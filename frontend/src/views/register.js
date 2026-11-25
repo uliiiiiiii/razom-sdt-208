@@ -75,7 +75,14 @@ export function renderRegister(app) {
       await API.post("/auth/register", body);
       const res = await API.post("/auth/login", { email: body.email, password: body.password });
       setToken(res.access_token);
-      setUser({ id: res.user_id, display_name: res.display_name, roles: res.roles });
+      const me = await API.get("/auth/me");
+      setUser({
+        id: me.id,
+        display_name: me.display_name,
+        roles: me.roles,
+        is_verified: me.is_verified,
+        only_verified_residents: me.only_verified_residents,
+      });
       location.hash = "#/";
     } catch (ex) {
       err.textContent = ex.message;
