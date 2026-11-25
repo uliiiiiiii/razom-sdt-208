@@ -75,7 +75,7 @@ Demo accounts (password `demo-pass-123`):
 ## 5. Map
 
 `GET /api/map?lat=&lng=&radius=3000&type=all|request|opportunity&category=` (any logged-in user)
-→ `[{type, id, category, title, latitude, longitude, distance_m, created_at, detail, start_time, slots_left}]`, sorted by distance. `detail` is one line of the description and never an address. `radius` is in metres, between 1 and 50000. At most the **300 nearest** items come back; exactly 300 means the list was cut, so show "300+" rather than a count.
+→ `[{type, id, category, title, latitude, longitude, distance_m, created_at, detail, start_time, slots_left}]`, sorted by distance. `detail` is one line of the description and never an address. `radius` is in metres, between 1 and 50000. At most the **300 nearest** items come back; a full 300 may mean the list was cut, so show "300+" rather than a count. Equal distances are ordered by id, so the same search returns the same items.
 
 - **Requests** come back at their **approximate** point, a cell about 300 m wide, never with an address. Draw them as an area or a soft marker, not as a precise pin, and say so in the UI.
 - **Opportunities** are at their real location. `start_time` and `slots_left` are set only for opportunities.

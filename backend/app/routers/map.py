@@ -22,8 +22,9 @@ from ..schemas import Category, MapItem
 router = APIRouter(tags=["map"])
 
 # Nearest items only: a 50 km search in a big city would otherwise return
-# every open item, and the browser draws one marker each. A full page means
-# the list was cut (the UI can show "300+").
+# every open item, and the browser draws one marker each. A full page may
+# have been cut (the UI shows "300+"). Ties in distance (requests in the same
+# approximate cell) are broken by id, so the cut is the same on every reload.
 MAP_LIMIT = 300
 
 
@@ -44,7 +45,7 @@ def search_map(
         items += _requests(db, point, radius, category)
     if kind in ("all", "opportunity"):
         items += _opportunities(db, point, radius, category)
-    return sorted(items, key=lambda i: i["distance_m"])[:MAP_LIMIT]
+    return sorted(items, key=lambda i: (i["distance_m"], i["type"], i["id"]))[:MAP_LIMIT]
 
 
 def _requests(db: Session, point, radius: int, category: str | None) -> list[dict]:
@@ -70,7 +71,7 @@ def _requests(db: Session, point, radius: int, category: str | None) -> list[dic
     )
     if category:
         stmt = stmt.where(HelpRequest.category == category)
-    stmt = stmt.order_by("dist").limit(MAP_LIMIT)
+    stmt = stmt.order_by("dist", HelpRequest.id).limit(MAP_LIMIT)
     return [
         _item("request", r, start_time=None, slots_left=None) for r in db.execute(stmt)
     ]
@@ -109,7 +110,7 @@ def _opportunities(db: Session, point, radius: int, category: str | None) -> lis
     )
     if category:
         stmt = stmt.where(Opportunity.category == category)
-    stmt = stmt.order_by("dist").limit(MAP_LIMIT)
+    stmt = stmt.order_by("dist", Opportunity.id).limit(MAP_LIMIT)
     return [
         _item("opportunity", r, start_time=r.start_time, slots_left=r.slots_left)
         for r in db.execute(stmt)

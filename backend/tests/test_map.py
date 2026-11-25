@@ -109,3 +109,17 @@ def test_map_returns_only_the_nearest_items(client, monkeypatch):
         ("request", near_req.json()["id"]),
         ("opportunity", near_opp.json()["id"]),
     ]
+
+
+def test_map_cut_is_stable_for_tied_distances(client, monkeypatch):
+    import app.routers.map as map_router
+
+    monkeypatch.setattr(map_router, "MAP_LIMIT", 1)
+    # same approximate cell -> same distance; the older request must win every time
+    ids = [new_request(client, make_user(client, "resident")).json()["id"] for _ in range(5)]
+    first = ids[0]
+    # rewrite all but the newest so the newest sits first on disk
+    sql("UPDATE help_requests SET description = description || ' ' WHERE id <> :i", i=ids[-1])
+    vol = make_user(client, "volunteer")
+    for _ in range(3):
+        assert [i["id"] for i in search(client, vol, type="request").json()] == [first]
