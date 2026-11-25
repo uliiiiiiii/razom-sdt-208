@@ -284,6 +284,7 @@ class UserUpdate(BaseModel):
 
 
 class AccessLogEntry(BaseModel):
+    id: int
     request_id: int
     user: VolunteerRef
     via: str

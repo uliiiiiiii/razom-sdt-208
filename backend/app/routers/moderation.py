@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from ..database import get_db
-from ..deps import require_roles
+from ..deps import Page, page_params, paginate, require_roles
 from ..models import (
     AddressAccess,
     HelpRequest,
@@ -254,17 +254,18 @@ def update_user(
 # address access audit
 # ---------------------------------------------------------------------------
 @router.get("/access-log", response_model=list[AccessLogEntry])
-def access_log(request_id: int | None = None, db: Session = Depends(get_db)) -> list[dict]:
-    stmt = (
-        select(AddressAccess, User)
-        .join(User, User.id == AddressAccess.user_id)
-        .order_by(AddressAccess.accessed_at.desc())
-        .limit(200)
-    )
+def access_log(
+    request_id: int | None = None,
+    page: Page = Depends(page_params),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    stmt = select(AddressAccess, User).join(User, User.id == AddressAccess.user_id)
     if request_id is not None:
         stmt = stmt.where(AddressAccess.request_id == request_id)
+    stmt = paginate(stmt, AddressAccess.id, page)
     return [
         {
+            "id": a.id,
             "request_id": a.request_id,
             "user": {"id": u.id, "display_name": u.display_name},
             "via": a.via,
