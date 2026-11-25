@@ -189,8 +189,8 @@ Three reports from different users hide the item automatically (or suspend the u
 | `GET /api/moderation/organizations?status=pending\|approved\|rejected` | `[{id, org_name, verification_status, created_at, user{id, email, display_name, roles}}]` |
 | `PATCH /api/moderation/organizations/{id}` | `{decision: approved\|rejected, comment?}` |
 | `GET /api/moderation/organizations/{id}/stats` | The same shape as the organization's own stats. |
-| `GET /api/moderation/users?q=&limit=&before=` | Search by email or name; paged (see below): `[{id, email, display_name, roles, is_blocked, created_at}]` |
-| `PATCH /api/moderation/users/{id}` | `{is_blocked?, is_moderator?}`. Blocking releases their claims. You can't change yourself (400). |
+| `GET /api/moderation/users?q=&limit=&before=` | Search by email or name; paged (see below): `[{id, email, display_name, roles, is_verified, only_verified_residents, is_blocked, created_at}]` |
+| `PATCH /api/moderation/users/{id}` | `{is_blocked?, is_moderator?, is_verified?, verification_comment?}`. Blocking releases their claims and also revokes the verified badge. `is_verified` accepts only `false` (revoke; `true` gives 422) and `verification_comment` is at most 500 characters; revoking a user who isn't verified is a no-op that still returns 200. Details in section 10. You can't change yourself (400). |
 | `GET /api/moderation/access-log?request_id=&limit=&before=` | Who saw which exact address, when, and how; paged (see below). Repeat views by the same person within an hour are one entry: `[{id, request_id, user{id, display_name}, via: claim\|report_review, accessed_at}]` |
 | `GET /api/moderation/stats` | `{requests_by_status, requests_by_category, users_total, active_users_30d, pending_reports, pending_organizations}` |
 
@@ -215,7 +215,7 @@ A user proves their identity once and a moderator checks it by hand. A verified 
 
 | Method & path | Notes |
 |---|---|
-| `GET /api/moderation/verifications` | The pending queue, oldest first: `[{id, user{id, display_name, roles}, submitted_at, duplicates[{id, display_name}]}]`. `duplicates` are other users who submitted the same document number: a warning sign. Your own submission and blocked users are left out. |
+| `GET /api/moderation/verifications` | The pending queue, oldest first: `[{id, user{id, display_name, roles}, submitted_at, duplicates[{id, display_name}]}]`. `duplicates` are other users who are already **verified (approved)** with the same document number: a warning sign. Pending or rejected submissions never appear. Your own submission and blocked users are left out. |
 | `GET /api/moderation/verifications/{id}` | Same fields plus `images`, the kinds still stored (`id_document`, `selfie`, `profile`). 404 unknown; 403 your own. |
 | `GET /api/moderation/verifications/{id}/images/{kind}` | The JPEG. **Every view is logged**; say so on screen. 404 once it is no longer pending. |
 | `PATCH /api/moderation/verifications/{id}` | `{decision: approved\|rejected, comment?}`. A comment (at most 500, not blank) is **required for `rejected`** (422 otherwise). Approving keeps only the profile photo and deletes the ID and selfie; rejecting deletes all images. 409 if already decided, or when approving a blocked user. 403 your own. |
