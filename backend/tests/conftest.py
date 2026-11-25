@@ -176,3 +176,18 @@ def submit_verification(client, user: dict, number: str = "AB123456") -> dict:
     )
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def make_verified(client, user: dict, moderator: dict) -> None:
+    """Submit a verification for `user` and approve it through the API."""
+    submit_verification(client, user)
+    vid = _pending_id(client, moderator, user)
+    r = client.patch(
+        f"/api/moderation/verifications/{vid}", headers=moderator["h"], json={"decision": "approved"}
+    )
+    assert r.status_code == 200, r.text
+
+
+def _pending_id(client, moderator: dict, user: dict) -> int:
+    rows = client.get("/api/moderation/verifications", headers=moderator["h"]).json()
+    return next(x["id"] for x in rows if x["user"]["id"] == user["id"])

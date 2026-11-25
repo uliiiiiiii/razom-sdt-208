@@ -332,6 +332,45 @@ class MyVerification(BaseModel):
     comment: str | None = None
 
 
+class VerificationDecision(BaseModel):
+    decision: Literal["approved", "rejected"]
+    comment: str | None = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def _reject_needs_comment(self):
+        self.comment = (self.comment or "").strip() or None
+        if self.decision == "rejected" and not self.comment:
+            raise ValueError("A comment is required when rejecting")
+        return self
+
+
+class DuplicateRef(BaseModel):
+    id: int
+    display_name: str
+
+
+class ReviewUser(BaseModel):
+    id: int
+    display_name: str
+    roles: list[str]
+
+
+class VerificationReview(BaseModel):
+    id: int
+    user: ReviewUser
+    submitted_at: datetime | None
+    duplicates: list[DuplicateRef]
+    images: list[str] | None = None  # kinds still stored; only on the detail route
+
+
+class VerificationAccessEntry(BaseModel):
+    id: int
+    verification_id: int
+    moderator: VolunteerRef
+    kind: str
+    accessed_at: datetime
+
+
 class SettingsIn(BaseModel):
     only_verified_residents: bool
 

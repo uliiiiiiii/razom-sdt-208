@@ -1,9 +1,10 @@
 """Identity verification, user side: challenge word, submission, status."""
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .images import ImageRejected, encrypt, fingerprint, normalize_document_number, prepare_image
@@ -90,3 +91,55 @@ def submit(
     row.submitted_at = _now()
     db.commit()
     return row
+
+
+def duplicates_of(db: Session, v: IdentityVerification) -> list[User]:
+    """Other users already approved with the same document fingerprint."""
+    if v.document_fingerprint is None:
+        return []
+    return list(
+        db.scalars(
+            select(User)
+            .join(IdentityVerification, IdentityVerification.user_id == User.id)
+            .where(
+                IdentityVerification.status == "approved",
+                IdentityVerification.document_fingerprint == v.document_fingerprint,
+                User.id != v.user_id,
+            )
+            .distinct()
+        )
+    )
+
+
+def decide(
+    db: Session,
+    v: IdentityVerification,
+    moderator: User,
+    decision: Literal["approved", "rejected"],
+    comment: str | None,
+) -> IdentityVerification:
+    if v.user_id == moderator.id:
+        raise HTTPException(403, "You can't review your own verification")
+    db.execute(select(IdentityVerification.id).where(IdentityVerification.id == v.id).with_for_update())
+    db.refresh(v)
+    if v.status != "pending":
+        raise HTTPException(409, "This submission has already been decided")
+    user = db.get(User, v.user_id)
+    mine = VerificationImage.verification_id == v.id
+    if decision == "approved":
+        if user.is_blocked:
+            raise HTTPException(409, "This user is blocked")
+        if user.photo_image_id is not None:  # replace the previous profile photo
+            db.execute(delete(VerificationImage).where(VerificationImage.id == user.photo_image_id))
+        db.execute(delete(VerificationImage).where(mine, VerificationImage.kind != "profile"))
+        db.flush()
+        user.photo_image_id = db.scalar(
+            select(VerificationImage.id).where(mine, VerificationImage.kind == "profile")
+        )
+        user.is_verified = True
+        user.verified_at = _now()
+    else:
+        db.execute(delete(VerificationImage).where(mine))
+    v.status, v.comment, v.decided_by, v.decided_at = decision, comment, moderator.id, _now()
+    db.commit()
+    return v
