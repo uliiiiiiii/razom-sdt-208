@@ -137,9 +137,9 @@ export function renderMap(app) {
       </div>
       <section class="sheet filters" id="filterCard">
           <div class="seg" role="group" aria-label="What to show">
-            <button type="button" class="seg-btn on" data-kind="all">All</button>
-            <button type="button" class="seg-btn" data-kind="request">Needs</button>
-            <button type="button" class="seg-btn" data-kind="opportunity">Offers</button>
+            <button type="button" class="seg-btn on" aria-pressed="true" data-kind="all">All</button>
+            <button type="button" class="seg-btn" aria-pressed="false" data-kind="request">Needs</button>
+            <button type="button" class="seg-btn" aria-pressed="false" data-kind="opportunity">Offers</button>
           </div>
           <input type="hidden" id="kind" value="all" />
           <label for="category">Category</label>
@@ -198,7 +198,10 @@ export function renderMap(app) {
 
   app.querySelectorAll(".seg-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      app.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("on", b === btn));
+      app.querySelectorAll(".seg-btn").forEach((b) => {
+        b.classList.toggle("on", b === btn);
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
       app.querySelector("#kind").value = btn.dataset.kind;
       search();
     });
@@ -404,7 +407,7 @@ async function openDetail(id) {
     body.innerHTML = `
       <div class="detail-kicker cat-${pinCat(r.category)}">${icon(CATEGORY_ICON[r.category] || "ellipsis", 15)} ${esc(categoryLabel(r.category))}</div>
       <h2 class="detail-title">${esc(r.title || categoryLabel(r.category))}</h2>
-      <span class="status ${statusClass}"><i></i>${esc(statusLabel(r.status))}</span>
+      <span class="status ${statusClass}"><i aria-hidden="true"></i>${esc(statusLabel(r.status))}</span>
       <p class="detail-desc">${esc(r.description)}</p>
       <div class="detail-meta">
         <div class="meta-row">${icon("pin", 16)}<span>${esc(where)}</span></div>

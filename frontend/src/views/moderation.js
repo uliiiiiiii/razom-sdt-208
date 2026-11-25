@@ -17,15 +17,15 @@ async function draw(app) {
   const page = app.querySelector(".page");
   page.innerHTML = `
     <div class="page-head">${icon("shieldCheck", 24)}<h1>Moderation</h1></div>
-    <div class="tabs" id="modTabs">
-      <button class="tab ${tab === "reports" ? "on" : ""}" data-t="reports">${icon("flag", 14)} Reports</button>
-      <button class="tab ${tab === "orgs" ? "on" : ""}" data-t="orgs">${icon("building", 14)} Organizations</button>
-      <button class="tab ${tab === "users" ? "on" : ""}" data-t="users">${icon("users", 14)} Users</button>
-      <button class="tab ${tab === "verify" ? "on" : ""}" data-t="verify">${icon("badgeCheck", 14)} Verifications</button>
-      <button class="tab ${tab === "log" ? "on" : ""}" data-t="log">${icon("eye", 14)} Access log</button>
-      <button class="tab ${tab === "stats" ? "on" : ""}" data-t="stats">${icon("chart", 14)} Stats</button>
+    <div class="tabs" role="tablist" id="modTabs">
+      <button class="tab ${tab === "reports" ? "on" : ""}" role="tab" aria-selected="${tab === "reports"}" data-t="reports">${icon("flag", 14)} Reports</button>
+      <button class="tab ${tab === "orgs" ? "on" : ""}" role="tab" aria-selected="${tab === "orgs"}" data-t="orgs">${icon("building", 14)} Organizations</button>
+      <button class="tab ${tab === "users" ? "on" : ""}" role="tab" aria-selected="${tab === "users"}" data-t="users">${icon("users", 14)} Users</button>
+      <button class="tab ${tab === "verify" ? "on" : ""}" role="tab" aria-selected="${tab === "verify"}" data-t="verify">${icon("badgeCheck", 14)} Verifications</button>
+      <button class="tab ${tab === "log" ? "on" : ""}" role="tab" aria-selected="${tab === "log"}" data-t="log">${icon("eye", 14)} Access log</button>
+      <button class="tab ${tab === "stats" ? "on" : ""}" role="tab" aria-selected="${tab === "stats"}" data-t="stats">${icon("chart", 14)} Stats</button>
     </div>
-    <div id="modBody"></div>`;
+    <div id="modBody" role="tabpanel"></div>`;
   page.querySelector("#modTabs").addEventListener("click", (e) => {
     const b = e.target.closest(".tab");
     if (!b) return;
@@ -45,10 +45,10 @@ async function reportsTab(body, app) {
   let before = null;
   const LIMIT = 50;
   body.innerHTML = `
-    <div class="tabs" id="repStatusTabs">
-      <button class="tab ${reportStatus === "open" ? "on" : ""}" data-s="open">Open</button>
-      <button class="tab ${reportStatus === "dismissed" ? "on" : ""}" data-s="dismissed">Dismissed</button>
-      <button class="tab ${reportStatus === "actioned" ? "on" : ""}" data-s="actioned">Actioned</button>
+    <div class="tabs" role="tablist" id="repStatusTabs">
+      <button class="tab ${reportStatus === "open" ? "on" : ""}" role="tab" aria-selected="${reportStatus === "open"}" data-s="open">Open</button>
+      <button class="tab ${reportStatus === "dismissed" ? "on" : ""}" role="tab" aria-selected="${reportStatus === "dismissed"}" data-s="dismissed">Dismissed</button>
+      <button class="tab ${reportStatus === "actioned" ? "on" : ""}" role="tab" aria-selected="${reportStatus === "actioned"}" data-s="actioned">Actioned</button>
     </div>
     <div id="repList"></div>
     <button class="btn secondary btn-block load-more" id="repMore" hidden>Load older</button>`;
@@ -155,17 +155,20 @@ async function reviewReport(body, reportId, app) {
 async function orgsTab(body) {
   let status = "pending";
   body.innerHTML = `
-    <div class="tabs" id="orgStatusTabs">
-      <button class="tab on" data-s="pending">Pending</button>
-      <button class="tab" data-s="approved">Approved</button>
-      <button class="tab" data-s="rejected">Rejected</button>
+    <div class="tabs" role="tablist" id="orgStatusTabs">
+      <button class="tab on" role="tab" aria-selected="true" data-s="pending">Pending</button>
+      <button class="tab" role="tab" aria-selected="false" data-s="approved">Approved</button>
+      <button class="tab" role="tab" aria-selected="false" data-s="rejected">Rejected</button>
     </div>
     <div id="orgList"></div>`;
   body.querySelector("#orgStatusTabs").addEventListener("click", (e) => {
     const b = e.target.closest(".tab");
     if (!b) return;
     status = b.dataset.s;
-    body.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t === b));
+    body.querySelectorAll(".tab").forEach((t) => {
+      t.classList.toggle("on", t === b);
+      t.setAttribute("aria-selected", t === b ? "true" : "false");
+    });
     load();
   });
   const list = body.querySelector("#orgList");
@@ -212,6 +215,7 @@ async function usersTab(body) {
   let before = null;
   const LIMIT = 50;
   body.innerHTML = `
+    <label for="userSearch" class="sr-only">Search users by email or name</label>
     <input id="userSearch" type="search" placeholder="Search by email or name…" />
     <div id="userList"></div>
     <button class="btn secondary btn-block load-more" id="userMore" hidden>Load older</button>`;

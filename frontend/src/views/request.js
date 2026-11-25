@@ -64,7 +64,7 @@ export async function renderRequest(app, id) {
       <section class="card">
         <div class="detail-kicker cat-${pinCat(r.category)}">${icon(CATEGORY_ICON[r.category] || "ellipsis", 15)} ${esc(categoryLabel(r.category))}</div>
         <h2 style="font-family:var(--display);font-weight:500;font-size:24px;margin:4px 0 8px">${esc(r.title || categoryLabel(r.category))}</h2>
-        <span class="status ${statusClass}"><i></i>${esc(statusLabel(r.status))}</span>
+        <span class="status ${statusClass}"><i aria-hidden="true"></i>${esc(statusLabel(r.status))}</span>
         <p class="detail-desc" style="margin:12px 0 0;white-space:pre-wrap">${esc(r.description)}</p>
         <div class="detail-meta">
           <div class="meta-row">${icon("pin", 16)}<span>${esc(where)}</span></div>

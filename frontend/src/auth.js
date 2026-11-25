@@ -73,7 +73,7 @@ export function renderUserBox() {
   if (u.roles?.includes("organization"))
     links.push(`<a class="nav-item${orgOn ? " active" : ""}" href="#/organization" ${orgOn ? 'aria-current="page"' : ""}>${icon("megaphone", 18)}<span>Offers</span></a>`);
   if (u.roles?.includes("volunteer") || u.roles?.includes("organization"))
-    links.push(`<a class="nav-item${verifyOn ? " active" : ""}" href="#/verification" ${verifyOn ? 'aria-current="page"' : ""}>${icon("shieldCheck", 18)}<span>Verification</span></a>`);
+    links.push(`<a class="nav-item${verifyOn ? " active" : ""}" href="#/verification" ${verifyOn ? 'aria-current="page"' : ""}>${icon("idCard", 18)}<span>Verification</span></a>`);
   if (u.roles?.includes("moderator"))
     links.push(`<a class="nav-item${modOn ? " active" : ""}" href="#/moderation" ${modOn ? 'aria-current="page"' : ""}>${icon("shieldCheck", 18)}<span>Moderation</span></a>`);
   nav.innerHTML = links.join("");

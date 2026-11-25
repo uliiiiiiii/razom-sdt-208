@@ -37,7 +37,6 @@ export async function renderVerification(app) {
       ` : ""}
       <div class="actions" style="margin-top:14px">
         ${canStart ? `<button class="btn" id="startBtn">${v.status === "none" ? "Start verification" : "Start again"}</button>` : ""}
-        ${canSubmit ? "" : ""}
       </div>
     </section>
     ${canSubmit ? `
@@ -52,8 +51,8 @@ export async function renderVerification(app) {
           <label for="v-profile">Profile photo</label>
           <input id="v-profile" name="profile" type="file" accept="image/jpeg,image/png,image/webp" required />
           <label for="v-docnum">Document number</label>
-          <input id="v-docnum" name="document_number" required minlength="4" maxlength="32" placeholder="e.g. AB123456" />
-          <p class="field-hint">4–32 characters. Stored only as a fingerprint to flag duplicates.</p>
+          <input id="v-docnum" name="document_number" required minlength="4" maxlength="32" placeholder="e.g. AB123456" aria-describedby="v-docnum-hint" />
+          <p class="field-hint" id="v-docnum-hint">4–32 characters. Stored only as a fingerprint to flag duplicates.</p>
           <div id="vErr" class="form-error" role="alert" hidden></div>
           <div class="compose-actions" style="margin-top:16px">
             <button class="btn" type="submit">Submit for review</button>
