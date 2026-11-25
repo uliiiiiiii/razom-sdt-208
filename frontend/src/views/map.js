@@ -2,7 +2,7 @@
 // Click a request marker to open the detail panel and its lifecycle:
 // claim -> resident accept/decline -> complete -> confirm/reopen -> cancel.
 import L from "../leaflet-setup.js";
-import { API, esc, getUser, CATEGORIES } from "../api.js";
+import { API, esc, getUser, CATEGORIES, loadPhoto } from "../api.js";
 import { icon } from "../icons.js";
 import {
   CATEGORY_ICON,
@@ -273,8 +273,9 @@ export function renderMap(app) {
     const list = app.querySelector("#nearList");
     if (!count || !list) return;
     const needs = items.filter((it) => it.type === "request");
-    if (needs.length) count.textContent = plural(needs.length, "open request", "open requests");
-    else if (items.length) count.textContent = plural(items.length, "offer", "offers");
+    const full = items.length >= 300;
+    if (needs.length) count.textContent = full ? `${needs.length}+ open requests` : plural(needs.length, "open request", "open requests");
+    else if (items.length) count.textContent = full ? `${items.length}+ offers` : plural(items.length, "offer", "offers");
     else count.textContent = "No open requests";
 
     list.innerHTML = items.slice().sort(byUrgencyThenFreshness).map((it) => row(it, oneLine(it))).join("");
@@ -369,6 +370,10 @@ async function openDetail(id) {
     if (r.is_mine && r.status === "completed") {
       buttons.push(b("confirm", "Confirm received"), b("reopen", "Not resolved", "secondary"));
     }
+    // anyone except the author can report; the backend enforces ownership too
+    if (!r.is_mine) {
+      buttons.push(b("report", `${icon("flag", 15)} Report`, "secondary"));
+    }
 
     const statusClass = STATUS_CLASS.has(r.status) ? r.status : "open";
     const where = r.exact_location
@@ -378,7 +383,10 @@ async function openDetail(id) {
       ? `<div class="meta-row">${icon("house", 16)}<span>${esc(r.address)}</span></div>`
       : "";
     const claimer = r.claimer && r.is_mine
-      ? `<div class="meta-row">${icon("user", 16)}<span>Claimed by <b>${esc(r.claimer.display_name)}</b>, helped ${Number(r.claimer.confirmed_count) || 0} times before</span></div>`
+      ? `<div class="meta-row">${icon("user", 16)}<span>Claimed by <b>${esc(r.claimer.display_name)}</b>${r.claimer.is_verified ? ` ${icon("badgeCheck", 14)}` : ""}, helped ${Number(r.claimer.confirmed_count) || 0} times before</span></div>`
+      : "";
+    const hidden = r.is_hidden && r.is_mine
+      ? `<div class="callout">${icon("alert", 16)}<span>This request was hidden by a moderator or by 3 reports. It's still visible to you.</span></div>`
       : "";
     let privacy;
     if (r.exact_location && r.is_claimer) {
@@ -389,6 +397,9 @@ async function openDetail(id) {
       privacy = `<div class="callout quiet">${icon("lock", 16)}<span>Approximate location. The address stays hidden until a volunteer is accepted.</span></div>`;
     }
     const when = r.created_at ? new Date(r.created_at).toLocaleString() : "";
+    const photoHolder = (r.claimer && r.is_mine && r.claimer.photo_url) || (r.is_claimer && r.author_photo_url)
+      ? `<img id="partyPhoto" alt="" class="photo-thumb" style="margin-top:12px" />`
+      : "";
 
     body.innerHTML = `
       <div class="detail-kicker cat-${pinCat(r.category)}">${icon(CATEGORY_ICON[r.category] || "ellipsis", 15)} ${esc(categoryLabel(r.category))}</div>
@@ -401,10 +412,23 @@ async function openDetail(id) {
         ${claimer}
         <div class="meta-row">${icon("clock", 16)}<span>${esc(when)}</span></div>
       </div>
+      ${photoHolder}
+      ${hidden}
       ${privacy}
       <div id="detailError" class="form-error" hidden></div>
       <div class="actions">${buttons.join("") || '<span class="quiet-line">Nothing for you to do on this one.</span>'}</div>
     `;
+    // load the other party's photo via fetch + blob URL (CSP: no plain <img src>)
+    const photoPath = (r.claimer && r.is_mine && r.claimer.photo_url) || (r.is_claimer && r.author_photo_url);
+    if (photoPath) {
+      const img = body.querySelector("#partyPhoto");
+      if (img) {
+        loadPhoto(photoPath).then((url) => {
+          if (url) img.src = url;
+          else img.remove();
+        });
+      }
+    }
   } catch (ex) {
     body.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;
   }
@@ -422,6 +446,9 @@ function showActionError(message) {
 
 async function act(btn) {
   const { id, act: action, claim } = btn.dataset;
+  if (action === "report") {
+    return reportFlow(id);
+  }
   if (action === "cancel" && !btn.dataset.sure) {
     btn.dataset.sure = "1";
     btn.textContent = "Confirm cancel";
@@ -442,5 +469,24 @@ async function act(btn) {
     window.__razomRefresh?.();
   } catch (ex) {
     showActionError(ex.message);
+  }
+}
+
+// inline report: prompt for a reason, POST /api/reports, surface the result
+async function reportFlow(requestId) {
+  const reason = window.prompt("Why are you reporting this request? (3–500 characters)");
+  if (!reason || !reason.trim()) return;
+  const err = document.getElementById("detailError");
+  try {
+    await API.post("/reports", { target_type: "request", target_id: Number(requestId), reason: reason.trim() });
+    if (err) {
+      err.hidden = false;
+      err.textContent = "Reported. Thank you.";
+    }
+  } catch (ex) {
+    if (err) {
+      err.hidden = false;
+      err.textContent = ex.message;
+    }
   }
 }
