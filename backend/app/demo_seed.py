@@ -1,7 +1,8 @@
 """Demo data for local development: a lived-in Kyiv map plus accounts in
 every state, so each screen and flow has something to show.
 
-    python -m app.demo_seed
+    python -m app.demo_seed            # skips if demo data is already there
+    python -m app.demo_seed --reset    # wipes a demo-only database and seeds again
 
 DEVELOPMENT ONLY: every account shares a published password. The script
 refuses to run on a database that has any non-demo user.
@@ -16,11 +17,21 @@ import sys
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from .database import Base
 from .geo import point_wkt, round_location
-from .models import HelpRequest, Opportunity, Organization, User
+from .models import (
+    ClaimHistory,
+    HelpRequest,
+    Opportunity,
+    OpportunitySignup,
+    Organization,
+    Report,
+    User,
+    VerificationLog,
+)
 from .security import hash_password
 
 DEMO_PASSWORD = "demo-pass-123"
@@ -152,38 +163,119 @@ def _map_requests(db: Session, ctx: dict) -> None:
     db.flush()
 
 
-def _organizations(db: Session, ctx: dict) -> None:
+def _claim(req: HelpRequest, volunteer: User, claimed_at: datetime, outcome: str,
+           accepted: bool) -> tuple[HelpRequest, int, datetime, str]:
+    """Sets the claim fields (before insert: the DB rejects a claimed request
+    without a claimer) and remembers the matching claim_history row."""
+    req.claimed_by, req.claimed_at = volunteer.id, claimed_at
+    req.accepted_at = claimed_at + timedelta(minutes=10) if accepted else None
+    return req, volunteer.id, claimed_at, outcome
+
+
+def _resident_journey(db: Session, ctx: dict) -> None:
+    """resident@ has one request in each state; volunteer@ holds the matching
+    claims (2 'claimed': the cap) and has helped once before."""
     users, now = ctx["users"], ctx["now"]
+    res, vol = users["resident@razom.demo"], users["volunteer@razom.demo"]
+    h, d = (lambda n: timedelta(hours=n)), (lambda n: timedelta(days=n))
+    rows = {
+        "open": new_request(res, "charging", "Need a power bank charged", 50.4501, 30.5234,
+                            "Khreshchatyk 1, apt 5", now - h(2)),
+        "claimed": new_request(res, "medicine", "Pick up insulin from the pharmacy", 50.4420, 30.5110,
+                               "Velyka Vasylkivska 10, apt 2", now - h(3), status="claimed"),
+        "completed": new_request(res, "water", "Drinking water for a 9th-floor flat", 50.4480, 30.5190,
+                                 "Khreshchatyk 1, apt 5", now - d(4), status="completed"),
+        "confirmed": new_request(res, "groceries", "Bread and milk, please", 50.4490, 30.5200,
+                                 "Khreshchatyk 1, apt 5", now - d(12), status="confirmed",
+                                 closed_at=now - d(10)),
+        "cancelled": new_request(res, "transport", "Lift to the hospital for a check-up", 50.4510, 30.5220,
+                                 "Khreshchatyk 1, apt 5", now - d(3), status="cancelled",
+                                 closed_at=now - d(2)),
+        # volunteer@'s accepted claim: they see this address
+        "accepted": new_request(users["resident12@razom.demo"], "pets", "Walk my dog for a few days",
+                                50.4620, 30.5080, "Kyrylivska 40, apt 17", now - h(5), status="claimed"),
+    }
+    claimed = [
+        _claim(rows["claimed"], vol, now - h(1), "active", accepted=False),  # < 12 h: doesn't expire
+        _claim(rows["completed"], vol, now - d(3), "completed", accepted=True),
+        _claim(rows["confirmed"], vol, now - d(11), "completed", accepted=True),
+        _claim(rows["accepted"], vol, now - timedelta(minutes=30), "active", accepted=True),
+    ]
+    db.add_all(rows.values())
+    db.flush()
+    for req, volunteer_id, claimed_at, outcome in claimed:
+        db.add(ClaimHistory(request_id=req.id, volunteer_id=volunteer_id,
+                            claimed_at=claimed_at, outcome=outcome))
+
+
+def _moderation_queue(db: Session, ctx: dict) -> None:
+    """A request auto-hidden by 3 reports, a reported user below the threshold,
+    and an account a moderator blocked."""
+    users = ctx["users"]
+    target = ctx["generated"][5]
+    for n in (2, 3, 4):
+        db.add(Report(reporter_id=users[f"volunteer{n}{DEMO_DOMAIN}"].id, target_type="request",
+                      target_id=target.id, reason="Asks for money transfers in the description"))
+    target.is_hidden = target.auto_hidden = True
+    db.add(Report(reporter_id=users["volunteer5@razom.demo"].id, target_type="user",
+                  target_id=users["resident5@razom.demo"].id, reason="Was rude when I arrived"))
+    users["blocked@razom.demo"].is_blocked = True
+
+
+def _organizations(db: Session, ctx: dict) -> None:
+    """Approved (with a full and a past offer), pending and rejected."""
+    users, now = ctx["users"], ctx["now"]
+    moderator = users["moderator@razom.demo"]
     approved = Organization(
         user_id=users["org@razom.demo"].id, org_name="Sirius Shelter",
-        verification_status="approved", verified_at=now,
-        verified_by=users["moderator@razom.demo"].id,
+        verification_status="approved", verified_at=now, verified_by=moderator.id,
     )
-    db.add(approved)
-    db.add(Organization(user_id=users["pending-org@razom.demo"].id, org_name="New Charity"))
-    db.add(Organization(user_id=users["rejected-org@razom.demo"].id, org_name="Fake Fund"))
+    rejected = Organization(
+        user_id=users["rejected-org@razom.demo"].id, org_name="Fake Fund",
+        verification_status="rejected", verified_at=now, verified_by=moderator.id,
+    )
+    db.add_all([approved, rejected,
+                Organization(user_id=users["pending-org@razom.demo"].id, org_name="New Charity")])
     db.flush()
-    for title, days, lat, lng in (
-        ("Walk the shelter dogs", 2, 50.4600, 30.5000),
-        ("Sort donated food", 5, 50.4550, 30.5300),
+    db.add(VerificationLog(organization_id=rejected.id, moderator_id=moderator.id,
+                           decision="rejected", comment="Could not confirm the registration number."))
+    offers = {}
+    for key, title, category, days, slots, lat, lng in (
+        ("dogs", "Walk the shelter dogs", "pets", 2, 5, 50.4600, 30.5000),
+        ("food", "Sort donated food", "groceries", 5, 5, 50.4550, 30.5300),
+        ("full", "Pack hygiene kits", "other", 3, 2, 50.4400, 30.5200),
+        ("past", "Clean the shelter yard", "pets", -1, 5, 50.4600, 30.5000),
     ):
-        db.add(
-            Opportunity(
-                organization_id=approved.id, title=title, category="pets" if "dogs" in title else "groceries",
-                description=title, location=point_wkt(lat, lng),
-                start_time=now + timedelta(days=days), slots_total=5,
-            )
+        offers[key] = Opportunity(
+            organization_id=approved.id, title=title, category=category, description=title,
+            location=point_wkt(lat, lng), start_time=now + timedelta(days=days), slots_total=slots,
         )
+    db.add_all(offers.values())
+    db.flush()
+    for key, email in (("dogs", "volunteer@razom.demo"), ("past", "volunteer@razom.demo"),
+                       ("full", "volunteer2@razom.demo"), ("full", "volunteer3@razom.demo")):
+        db.add(OpportunitySignup(opportunity_id=offers[key].id, volunteer_id=users[email].id))
 
 
-SCENARIOS: list[Scenario] = [_accounts, _map_requests, _organizations]
+SCENARIOS: list[Scenario] = [
+    _accounts,
+    _map_requests,
+    _resident_journey,
+    _moderation_queue,
+    _organizations,
+]
 
 
-def seed_demo(db: Session) -> None:
+def seed_demo(db: Session, reset: bool = False) -> None:
+    """reset=True wipes every table first (allowed only because every user is a
+    demo user), e.g. to replace data left by an older version of this script."""
     if db.scalar(select(User.id).where(User.email.not_like(f"%{DEMO_DOMAIN}")).limit(1)):
         raise RuntimeError("Refusing to seed demo data: the database has real (non-demo) users")
-    if db.scalar(select(User.id).where(User.email == "resident@razom.demo")):
-        return  # already seeded
+    if reset:
+        tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
+        db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+    elif db.scalar(select(User.id).where(User.email == "resident@razom.demo")):
+        return  # already seeded (use --reset to start over)
     ctx: dict = {"now": datetime.now(timezone.utc)}
     for scenario in SCENARIOS:
         scenario(db, ctx)
@@ -198,7 +290,7 @@ if __name__ == "__main__":
     upgrade_to_head(settings.database_url)  # works even before the server ever ran
     with SessionLocal() as session:
         try:
-            seed_demo(session)
+            seed_demo(session, reset="--reset" in sys.argv)
         except RuntimeError as exc:
             sys.exit(str(exc))
     print(f"Demo accounts (password: {DEMO_PASSWORD}):")

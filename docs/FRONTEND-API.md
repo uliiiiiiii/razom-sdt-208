@@ -11,18 +11,22 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -r requirements.txt
 export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 uvicorn app.main:app --reload --port 8000    # creates/updates the schema on start
-python -m app.demo_seed                      # demo accounts + content (dev only)
+python -m app.demo_seed                      # demo accounts + content (dev only); add --reset to replace older demo data
 ```
 
-Demo accounts (password `demo-pass-123`):
+Demo accounts (password `demo-pass-123`). Each one exists to show a particular screen or state:
 
-| Email | Role |
+| Email | What it has |
 |---|---|
-| `resident@razom.demo` | Resident (2 open requests) |
-| `volunteer@razom.demo` | Volunteer |
-| `org@razom.demo` | Organization, approved (2 opportunities) |
-| `pending-org@razom.demo` | Organization, waiting for approval |
-| `moderator@razom.demo` | Moderator |
+| `resident@razom.demo` | Resident with one request in every state: open; claimed by Taras and **waiting for you to accept or decline**; completed and **waiting for you to confirm**; confirmed; cancelled |
+| `volunteer@razom.demo` | Volunteer "Taras": one claim waiting for the resident, one **accepted claim with the address visible**, one completed, one confirmed ("helped 1 time"). Holds the 2-claim limit, so claiming more shows that error. Signed up for 2 offers, one already past |
+| `org@razom.demo` | Organization, approved: 4 offers, including one **full** (`slots_left = 0`) and one **already started**, where attendance can be marked |
+| `pending-org@razom.demo` | Organization waiting for approval |
+| `rejected-org@razom.demo` | Organization rejected, with the moderator's comment |
+| `moderator@razom.demo` | Moderator. The queue has a request **auto-hidden by 3 reports** and a reported user |
+| `blocked@razom.demo` | Blocked account: login answers 403 "Account is blocked" |
+| `resident2`–`resident16@razom.demo` | Authors of about 40 open requests across Kyiv (all 7 categories; a third posted in the last 6 hours). `resident16` can still post a new request |
+| `volunteer2`–`volunteer5@razom.demo` | Volunteers with no claims, for trying claim flows |
 
 ## 2. Frontend project setup
 

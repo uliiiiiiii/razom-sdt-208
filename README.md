@@ -48,9 +48,9 @@ Tests use a separate database `razom_test` on the same server (created automatic
 
 ### 4. Demo data (development only)
 ```bash
-python -m app.demo_seed
+python -m app.demo_seed            # add --reset to replace demo data from an older version
 ```
-Creates one account per role (resident, volunteer, approved and pending organization, moderator; password `demo-pass-123`) plus requests and opportunities in Kyiv. Refuses to run on a database with real users.
+Fills the map with about 40 open requests across Kyiv and creates demo accounts in every state: a request at each step, claims waiting or accepted, approved, pending and rejected organizations, a moderation queue, and a blocked user. Every account uses password `demo-pass-123`; the full list is in [`docs/FRONTEND-API.md`](./docs/FRONTEND-API.md). The data is the same on every run, and the script refuses to run on a database with real users.
 
 ### 5. Open the app
 - **API docs (Swagger):** http://localhost:8000/docs
