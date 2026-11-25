@@ -4,7 +4,7 @@
 import L from "../leaflet-setup.js";
 import { API, CATEGORIES, esc } from "../api.js";
 import { icon } from "../icons.js";
-import { categoryLabel, pinMarkup } from "../ui.js";
+import { categoryLabel, pinMarkup, inlineNotice } from "../ui.js";
 
 let pickerMap = null;
 
@@ -45,6 +45,7 @@ export async function renderOrganization(app) {
       <span class="tag ${org.verification_status === "approved" ? "green" : org.verification_status === "pending" ? "amber" : "red"}">${esc(org.verification_status)}</span>
     </div>
     ${banner}
+    <div id="orgErr" class="form-error" role="alert" hidden></div>
     <div id="statsBox"></div>
     <section class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -110,7 +111,7 @@ async function loadOpps(page, org) {
     });
     list.querySelectorAll("[data-close]").forEach((b) => b.onclick = async () => {
       try { await API.patch(`/opportunities/${b.dataset.close}/close`); loadOpps(page, org); loadStats(page); }
-      catch (ex) { alert(ex.message); }
+      catch (ex) { inlineNotice(page.querySelector("#orgErr"), ex.message); }
     });
     list.querySelectorAll("[data-signups]").forEach((b) => b.onclick = () => showSignups(page, b.dataset.signups));
   } catch (ex) {
@@ -240,7 +241,7 @@ async function showSignups(page, oppId) {
       try {
         await API.patch(`/opportunities/${oppId}/signups/${b.dataset.att}`, { attended: b.dataset.v === "1" });
         showSignups(page, oppId);
-      } catch (ex) { alert(ex.message); }
+      } catch (ex) { inlineNotice(page.querySelector("#orgErr"), ex.message); }
     });
     card.querySelector("#ssBack").onclick = () => { card.hidden = true; };
   } catch (ex) {

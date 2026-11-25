@@ -2,7 +2,7 @@
 // Volunteer: sign up / cancel. Owner: see signups + mark attendance.
 import { API, esc, getUser } from "../api.js";
 import { icon } from "../icons.js";
-import { categoryLabel } from "../ui.js";
+import { categoryLabel, inlinePrompt, inlineNotice } from "../ui.js";
 
 export async function renderOpportunity(app, id) {
   app.innerHTML = `<div class="page"><p class="empty" role="status" aria-live="polite">Loading…</p></div>`;
@@ -61,14 +61,15 @@ export async function renderOpportunity(app, id) {
     };
     const reportBtn = page.querySelector("#reportBtn");
     if (reportBtn) reportBtn.onclick = async () => {
-      const reason = window.prompt("Why are you reporting this offer? (3–500 characters)");
-      if (!reason || !reason.trim()) return;
       const err = page.querySelector("#oErr");
+      if (!err) return;
+      const reason = await inlinePrompt(err, "Why are you reporting this offer? (3–500 characters)", { required: true, minlength: 3, maxlength: 500 });
+      if (!reason) return;
       try {
-        await API.post("/reports", { target_type: "opportunity", target_id: Number(id), reason: reason.trim() });
-        if (err) { err.hidden = false; err.textContent = "Reported. Thank you."; }
+        await API.post("/reports", { target_type: "opportunity", target_id: Number(id), reason });
+        inlineNotice(err, "Reported. Thank you.");
       } catch (ex) {
-        if (err) { err.hidden = false; err.textContent = ex.message; }
+        inlineNotice(err, ex.message);
       }
     };
   } catch (ex) {

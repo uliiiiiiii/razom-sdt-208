@@ -67,6 +67,7 @@ export async function renderVerification(app) {
         <span style="font-size:14px;font-weight:600">Show only requests from verified residents</span>
       </label>
       <p class="field-hint">When on, the map hides requests from unverified authors.</p>
+      <div id="vToggleErr" class="form-error" role="alert" hidden></div>
     </section>
   `;
 
@@ -92,6 +93,6 @@ export async function renderVerification(app) {
   const toggle = page.querySelector("#vToggle");
   if (toggle) toggle.onchange = async () => {
     try { await API.patch("/me/settings", { only_verified_residents: toggle.checked }); }
-    catch (ex) { toggle.checked = !toggle.checked; alert(ex.message); }
+    catch (ex) { toggle.checked = !toggle.checked; const e = page.querySelector("#vToggleErr"); e.hidden = false; e.textContent = ex.message; }
   };
 }

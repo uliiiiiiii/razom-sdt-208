@@ -74,3 +74,65 @@ export function authAside() {
       </div>
     </aside>`;
 }
+
+/**
+ * Show an inline prompt (textarea + submit/cancel) inside `container`.
+ * Returns a Promise<string|null> — the trimmed text, or null if cancelled.
+ */
+export function inlinePrompt(container, question, opts = {}) {
+  return new Promise((resolve) => {
+    const { required = false, minlength = 0, maxlength = 500, placeholder = "" } = opts;
+    container.hidden = false;
+    container.innerHTML = `
+      <label style="display:block;font-weight:600;margin-bottom:4px">${question}</label>
+      <textarea rows="3" maxlength="${maxlength}" placeholder="${placeholder}" style="width:100%;margin-bottom:8px"></textarea>
+      <div style="display:flex;gap:8px">
+        <button class="btn" type="button">Submit</button>
+        <button class="btn secondary" type="button">Cancel</button>
+      </div>`;
+    const ta = container.querySelector("textarea");
+    const [submitBtn, cancelBtn] = container.querySelectorAll("button");
+    const label = container.querySelector("label");
+    ta.focus();
+    cancelBtn.onclick = () => { container.innerHTML = ""; container.hidden = true; resolve(null); };
+    submitBtn.onclick = () => {
+      const val = ta.value.trim();
+      if (required && val.length < minlength) {
+        label.textContent = `${question} (at least ${minlength} characters required)`;
+        ta.focus();
+        return;
+      }
+      container.innerHTML = "";
+      container.hidden = true;
+      resolve(val);
+    };
+  });
+}
+
+/**
+ * Show an inline confirmation (message + yes/cancel) inside `container`.
+ * Returns a Promise<boolean>.
+ */
+export function inlineConfirm(container, question) {
+  return new Promise((resolve) => {
+    container.hidden = false;
+    container.innerHTML = `
+      <p style="font-weight:600;margin-bottom:8px">${question}</p>
+      <div style="display:flex;gap:8px">
+        <button class="btn danger" type="button">Yes, confirm</button>
+        <button class="btn secondary" type="button">Cancel</button>
+      </div>`;
+    const [yesBtn, cancelBtn] = container.querySelectorAll("button");
+    yesBtn.focus();
+    yesBtn.onclick = () => { container.innerHTML = ""; container.hidden = true; resolve(true); };
+    cancelBtn.onclick = () => { container.innerHTML = ""; container.hidden = true; resolve(false); };
+  });
+}
+
+/**
+ * Show a message (replaces alert) inside `container`.
+ */
+export function inlineNotice(container, message) {
+  container.hidden = false;
+  container.textContent = message;
+}

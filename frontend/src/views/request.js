@@ -3,7 +3,7 @@
 // refresh on #/requests/5 survives (the backend serves index.html for unknown paths).
 import { API, esc, getUser, loadPhoto } from "../api.js";
 import { icon } from "../icons.js";
-import { CATEGORY_ICON, categoryLabel, statusLabel, pinCat } from "../ui.js";
+import { CATEGORY_ICON, categoryLabel, statusLabel, pinCat, inlinePrompt, inlineNotice } from "../ui.js";
 
 const STATUS_CLASS = new Set(["open", "claimed", "completed", "confirmed", "cancelled"]);
 
@@ -99,14 +99,15 @@ export async function renderRequest(app, id) {
 async function act(btn, id) {
   const { act: action, claim } = btn.dataset;
   if (action === "report") {
-    const reason = window.prompt("Why are you reporting this request? (3–500 characters)");
-    if (!reason || !reason.trim()) return;
     const err = document.getElementById("detailError");
+    if (!err) return;
+    const reason = await inlinePrompt(err, "Why are you reporting this request? (3–500 characters)", { required: true, minlength: 3, maxlength: 500 });
+    if (!reason) return;
     try {
-      await API.post("/reports", { target_type: "request", target_id: Number(id), reason: reason.trim() });
-      if (err) { err.hidden = false; err.textContent = "Reported. Thank you."; }
+      await API.post("/reports", { target_type: "request", target_id: Number(id), reason });
+      inlineNotice(err, "Reported. Thank you.");
     } catch (ex) {
-      if (err) { err.hidden = false; err.textContent = ex.message; }
+      inlineNotice(err, ex.message);
     }
     return;
   }

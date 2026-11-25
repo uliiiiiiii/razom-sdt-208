@@ -11,6 +11,8 @@ import {
   fmtDist,
   pinCat,
   pinMarkup,
+  inlinePrompt,
+  inlineNotice,
 } from "../ui.js";
 
 let map = null;
@@ -477,19 +479,14 @@ async function act(btn) {
 
 // inline report: prompt for a reason, POST /api/reports, surface the result
 async function reportFlow(requestId) {
-  const reason = window.prompt("Why are you reporting this request? (3–500 characters)");
-  if (!reason || !reason.trim()) return;
   const err = document.getElementById("detailError");
+  if (!err) return;
+  const reason = await inlinePrompt(err, "Why are you reporting this request? (3–500 characters)", { required: true, minlength: 3, maxlength: 500 });
+  if (!reason) return;
   try {
-    await API.post("/reports", { target_type: "request", target_id: Number(requestId), reason: reason.trim() });
-    if (err) {
-      err.hidden = false;
-      err.textContent = "Reported. Thank you.";
-    }
+    await API.post("/reports", { target_type: "request", target_id: Number(requestId), reason });
+    inlineNotice(err, "Reported. Thank you.");
   } catch (ex) {
-    if (err) {
-      err.hidden = false;
-      err.textContent = ex.message;
-    }
+    inlineNotice(err, ex.message);
   }
 }

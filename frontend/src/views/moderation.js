@@ -4,6 +4,7 @@
 // stats, and identity-verification review (image viewing logged).
 import { API, esc, loadPhoto } from "../api.js";
 import { icon } from "../icons.js";
+import { inlinePrompt, inlineNotice, inlineConfirm } from "../ui.js";
 
 let tab = "reports";
 let reportStatus = "open";
@@ -160,6 +161,7 @@ async function orgsTab(body) {
       <button class="tab" role="tab" aria-selected="false" data-s="approved">Approved</button>
       <button class="tab" role="tab" aria-selected="false" data-s="rejected">Rejected</button>
     </div>
+    <div id="orgTabErr" class="form-error" role="alert" hidden></div>
     <div id="orgList"></div>`;
   body.querySelector("#orgStatusTabs").addEventListener("click", (e) => {
     const b = e.target.closest(".tab");
@@ -192,18 +194,21 @@ async function orgsTab(body) {
         </div>`).join("");
       list.querySelectorAll("[data-approve]").forEach((b) => b.onclick = async () => {
         try { await API.patch(`/moderation/organizations/${b.dataset.approve}`, { decision: "approved" }); load(); }
-        catch (ex) { alert(ex.message); }
+        catch (ex) { inlineNotice(body.querySelector("#orgTabErr"), ex.message); }
       });
       list.querySelectorAll("[data-reject]").forEach((b) => b.onclick = async () => {
-        const comment = window.prompt("Reason for rejection (optional):") || "";
+        const err = body.querySelector("#orgTabErr");
+        const comment = await inlinePrompt(err, "Reason for rejection (optional):", { maxlength: 500 });
+        if (comment === null) return;
         try { await API.patch(`/moderation/organizations/${b.dataset.reject}`, { decision: "rejected", comment }); load(); }
-        catch (ex) { alert(ex.message); }
+        catch (ex) { inlineNotice(err, ex.message); }
       });
       list.querySelectorAll("[data-stats]").forEach((b) => b.onclick = async () => {
+        const err = body.querySelector("#orgTabErr");
         try {
           const s = await API.get(`/moderation/organizations/${b.dataset.stats}/stats`);
-          alert(`${s.opportunities_total} offers, ${s.signups_total} sign-ups, ${s.attended_total} attended, ${s.past_opportunities} past.`);
-        } catch (ex) { alert(ex.message); }
+          inlineNotice(err, `${s.opportunities_total} offers, ${s.signups_total} sign-ups, ${s.attended_total} attended, ${s.past_opportunities} past.`);
+        } catch (ex) { inlineNotice(err, ex.message); }
       });
     } catch (ex) { list.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; }
   }
@@ -217,6 +222,7 @@ async function usersTab(body) {
   body.innerHTML = `
     <label for="userSearch" class="sr-only">Search users by email or name</label>
     <input id="userSearch" type="search" placeholder="Search by email or name…" />
+    <div id="userTabErr" class="form-error" role="alert" hidden></div>
     <div id="userList"></div>
     <button class="btn secondary btn-block load-more" id="userMore" hidden>Load older</button>`;
   const searchEl = body.querySelector("#userSearch");
@@ -250,18 +256,22 @@ async function usersTab(body) {
       moreBtn.hidden = rows.length < LIMIT;
       if (rows.length) before = rows[rows.length - 1].id;
       list.querySelectorAll("[data-block]").forEach((b) => b.onclick = async () => {
-        if (!confirm("Block this user? Their claims are released and badge revoked.")) return;
+        const err = body.querySelector("#userTabErr");
+        const ok = await inlineConfirm(err, "Block this user? Their claims are released and badge revoked.");
+        if (!ok) return;
         try { await API.patch(`/moderation/users/${b.dataset.block}`, { is_blocked: true }); before = null; list.innerHTML = ""; load(); }
-        catch (ex) { alert(ex.message); }
+        catch (ex) { inlineNotice(err, ex.message); }
       });
       list.querySelectorAll("[data-unblock]").forEach((b) => b.onclick = async () => {
         try { await API.patch(`/moderation/users/${b.dataset.unblock}`, { is_blocked: false }); before = null; list.innerHTML = ""; load(); }
-        catch (ex) { alert(ex.message); }
+        catch (ex) { inlineNotice(body.querySelector("#userTabErr"), ex.message); }
       });
       list.querySelectorAll("[data-revoke]").forEach((b) => b.onclick = async () => {
-        const comment = window.prompt("Reason for revoking the badge (shown to the user):") || "";
+        const err = body.querySelector("#userTabErr");
+        const comment = await inlinePrompt(err, "Reason for revoking the badge (shown to the user):", { maxlength: 500 });
+        if (comment === null) return;
         try { await API.patch(`/moderation/users/${b.dataset.revoke}`, { is_verified: false, verification_comment: comment }); before = null; list.innerHTML = ""; load(); }
-        catch (ex) { alert(ex.message); }
+        catch (ex) { inlineNotice(err, ex.message); }
       });
     } catch (ex) { list.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`; }
   }
@@ -324,14 +334,15 @@ async function reviewVerification(body, vid, app) {
     body.querySelectorAll("[data-dec]").forEach((b) => b.onclick = async () => {
       const err = body.querySelector("#vErr");
       err.hidden = true;
+      err.innerHTML = "";
       const decision = b.dataset.dec;
       let comment = null;
       if (decision === "rejected") {
-        comment = window.prompt("Reason for rejection (required):");
-        if (!comment || !comment.trim()) { err.textContent = "A comment is required when rejecting."; err.hidden = false; return; }
+        comment = await inlinePrompt(err, "Reason for rejection (required):", { required: true, minlength: 3, maxlength: 500 });
+        if (comment === null) return;
       }
       try { await API.patch(`/moderation/verifications/${vid}`, { decision, comment }); photos.forEach((p) => p.revoke()); tab = "verify"; draw(app); }
-      catch (ex) { err.textContent = ex.message; err.hidden = false; }
+      catch (ex) { inlineNotice(err, ex.message); }
     });
   } catch (ex) {
     body.innerHTML = `<div class="form-error" role="alert">${esc(ex.message)}</div>`;
