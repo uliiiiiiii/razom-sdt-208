@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user, require_roles, require_verified_org
-from ..geo import lat_expr, lng_expr, point_wkt
+from ..geo import point_wkt
 from ..models import Opportunity, OpportunitySignup, Organization, User
 from ..schemas import (
     AttendanceUpdate,
@@ -220,22 +220,17 @@ def _serialize_signup(signup: OpportunitySignup, volunteer: User) -> dict:
 
 def serialize_opportunity(db: Session, opp: Opportunity, viewer_id: int) -> dict:
     org = db.get(Organization, opp.organization_id)
-    coords = db.execute(
-        select(lat_expr(Opportunity.location), lng_expr(Opportunity.location)).where(
-            Opportunity.id == opp.id
-        )
-    ).one()
     return {
         "id": opp.id,
         "organization": {"id": org.id, "org_name": org.org_name},
         "title": opp.title,
         "description": opp.description,
         "category": opp.category,
-        "latitude": coords[0],
-        "longitude": coords[1],
+        "latitude": opp.lat,
+        "longitude": opp.lng,
         "start_time": opp.start_time,
         "slots_total": opp.slots_total,
-        "slots_taken": _slots_taken(db, opp.id),
+        "slots_taken": opp.slots_taken,
         "status": opp.status,
         "is_signed_up": _find_signup(db, opp.id, viewer_id) is not None,
         "is_owner": org.user_id == viewer_id,

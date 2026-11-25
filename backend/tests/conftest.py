@@ -9,6 +9,7 @@ os.environ.setdefault(
 )
 os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 os.environ["JWT_SECRET"] = "test-secret-" + "x" * 52
+os.environ["VERIFICATION_KEY"] = "test-verification-key-" + "y" * 40
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["BCRYPT_ROUNDS"] = "4"
 
@@ -145,3 +146,48 @@ def new_request(client, user: dict, **overrides):
         "address": "Khreshchatyk 1, apt 5",
     } | overrides
     return client.post("/api/requests", json=body, headers=user["h"])
+
+
+def png_bytes(size=(64, 64), color="red", fmt="PNG", exif: dict | None = None) -> bytes:
+    """A small in-memory image; `exif` maps tag id to value."""
+    import io
+
+    from PIL import Image
+
+    img = Image.new("RGB", size, color)
+    buf = io.BytesIO()
+    kwargs = {}
+    if exif:
+        e = Image.Exif()
+        for tag, value in exif.items():
+            e[tag] = value
+        kwargs["exif"] = e
+    img.save(buf, format=fmt, **kwargs)
+    return buf.getvalue()
+
+
+def submit_verification(client, user: dict, number: str = "AB123456") -> dict:
+    """Start a verification, then submit three images; returns the JSON."""
+    r = client.post("/api/me/verification/start", headers=user["h"])
+    assert r.status_code == 200, r.text
+    files = {k: (f"{k}.png", png_bytes(), "image/png") for k in ("id_document", "selfie", "profile")}
+    r = client.post(
+        "/api/me/verification", headers=user["h"], files=files, data={"document_number": number}
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def make_verified(client, user: dict, moderator: dict) -> None:
+    """Submit a verification for `user` and approve it through the API."""
+    submit_verification(client, user)
+    vid = _pending_id(client, moderator, user)
+    r = client.patch(
+        f"/api/moderation/verifications/{vid}", headers=moderator["h"], json={"decision": "approved"}
+    )
+    assert r.status_code == 200, r.text
+
+
+def _pending_id(client, moderator: dict, user: dict) -> int:
+    rows = client.get("/api/moderation/verifications", headers=moderator["h"]).json()
+    return next(x["id"] for x in rows if x["user"]["id"] == user["id"])

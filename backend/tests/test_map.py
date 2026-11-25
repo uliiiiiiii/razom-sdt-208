@@ -93,3 +93,33 @@ def test_map_requires_login(client):
 def test_old_requests_map_removed(client):
     vol = make_user(client, "volunteer")
     assert client.get("/api/requests/map", params=CENTER, headers=vol["h"]).status_code != 200
+
+
+def test_map_returns_only_the_nearest_items(client, monkeypatch):
+    import app.routers.map as map_router
+
+    monkeypatch.setattr(map_router, "MAP_LIMIT", 2)
+    org = make_org(client)
+    near_req = new_request(client, make_user(client, "resident"), latitude=50.455, longitude=30.52)
+    near_opp = new_opportunity(client, org, latitude=50.46, longitude=30.52)
+    new_request(client, make_user(client, "resident"), latitude=50.47, longitude=30.52)
+    new_opportunity(client, org, latitude=50.48, longitude=30.52)
+    items = search(client, make_user(client, "volunteer"), radius=10000).json()
+    assert [(i["type"], i["id"]) for i in items] == [
+        ("request", near_req.json()["id"]),
+        ("opportunity", near_opp.json()["id"]),
+    ]
+
+
+def test_map_cut_is_stable_for_tied_distances(client, monkeypatch):
+    import app.routers.map as map_router
+
+    monkeypatch.setattr(map_router, "MAP_LIMIT", 1)
+    # same approximate cell -> same distance; the older request must win every time
+    ids = [new_request(client, make_user(client, "resident")).json()["id"] for _ in range(5)]
+    first = ids[0]
+    # rewrite all but the newest so the newest sits first on disk
+    sql("UPDATE help_requests SET description = description || ' ' WHERE id <> :i", i=ids[-1])
+    vol = make_user(client, "volunteer")
+    for _ in range(3):
+        assert [i["id"] for i in search(client, vol, type="request").json()] == [first]

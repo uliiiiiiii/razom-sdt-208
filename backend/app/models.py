@@ -1,7 +1,7 @@
 """ORM models (SQLAlchemy + GeoAlchemy2).
 
-These mirror db/init.sql. The schema is created/verified at startup against
-the real PostgreSQL+PostGIS database.
+The schema itself is owned by the Alembic migrations in app/migrations;
+these models must be kept in step with them.
 """
 from __future__ import annotations
 
@@ -14,14 +14,19 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
+    LargeBinary,
     Integer,
     Text,
     UniqueConstraint,
     func,
+    select,
+    text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from .database import Base
+from .geo import lat_expr, lng_expr
 
 
 class User(Base):
@@ -38,6 +43,18 @@ class User(Base):
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # blocked by the 3-reports rule (a dismissed report undoes only these)
     auto_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    photo_image_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "verification_images.id", ondelete="SET NULL", use_alter=True,
+            name="fk_users_photo_image",
+        ),
+    )
+    only_verified_residents: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -120,6 +137,7 @@ class HelpRequest(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     auto_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    verified_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -238,3 +256,89 @@ class VerificationLog(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+
+class IdentityVerification(Base):
+    __tablename__ = "identity_verifications"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('started','pending','approved','rejected','expired','revoked')",
+            name="chk_verification_status_ck",
+        ),
+        Index(
+            "uniq_open_verification", "user_id", unique=True,
+            postgresql_where=text("status IN ('started','pending')"),
+        ),
+        Index("ix_verification_fingerprint", "document_fingerprint"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    challenge_word: Mapped[str] = mapped_column(Text, nullable=False)
+    challenge_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    document_fingerprint: Mapped[str | None] = mapped_column(Text)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class VerificationImage(Base):
+    __tablename__ = "verification_images"
+    __table_args__ = (
+        UniqueConstraint("verification_id", "kind", name="uniq_verification_image"),
+        CheckConstraint(
+            "kind IN ('id_document','selfie','profile')",
+            name="chk_verification_image_kind_ck",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    verification_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("identity_verifications.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)  # Fernet token
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class VerificationAccess(Base):
+    """Audit trail: which moderator viewed which verification image."""
+
+    __tablename__ = "verification_access_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    verification_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("identity_verifications.id", ondelete="CASCADE"), nullable=False
+    )
+    moderator_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    accessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# Coordinates (and the sign-up count) load in the same SELECT as the row, so
+# serializing a list doesn't cost one extra query per item. Like any loaded
+# attribute they are stale until the next commit/refresh.
+_req, _opp = HelpRequest.__table__.c, Opportunity.__table__.c
+HelpRequest.exact_lat = column_property(lat_expr(_req.location))
+HelpRequest.exact_lng = column_property(lng_expr(_req.location))
+HelpRequest.approx_lat = column_property(lat_expr(_req.approx_location))
+HelpRequest.approx_lng = column_property(lng_expr(_req.approx_location))
+Opportunity.lat = column_property(lat_expr(_opp.location))
+Opportunity.lng = column_property(lng_expr(_opp.location))
+# display only: under concurrent sign-ups check the count with a fresh query
+Opportunity.slots_taken = column_property(
+    select(func.count(OpportunitySignup.id))
+    .where(OpportunitySignup.opportunity_id == _opp.id)
+    .correlate_except(OpportunitySignup)
+    .scalar_subquery()
+)

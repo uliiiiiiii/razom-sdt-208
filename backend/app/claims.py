@@ -66,3 +66,8 @@ def expire_unaccepted_claims(db: Session) -> int:
 def release_claims_of(db: Session, volunteer_id: int) -> int:
     """A blocked volunteer's claimed requests go back to the map (caller commits)."""
     return _reopen(db, "claimed_by = :v", {"v": volunteer_id})
+
+
+def release_verified_only_claims_of(db: Session, volunteer_id: int) -> int:
+    """A revoked volunteer's claims on verified-only requests go back to the map (caller commits)."""
+    return _reopen(db, "claimed_by = :v AND verified_only", {"v": volunteer_id})

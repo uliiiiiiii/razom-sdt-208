@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -17,8 +18,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit(REGISTER_LIMIT)
 def register(request: Request, payload: UserRegister, db: Session = Depends(get_db)) -> User:
-    if db.scalar(select(User).where(User.email == payload.email)):
-        raise HTTPException(status_code=409, detail="Email already registered")
     if not (payload.is_resident or payload.is_volunteer or payload.is_organization):
         raise HTTPException(
             status_code=400, detail="Choose at least one role: resident, volunteer or organization"
@@ -33,7 +32,11 @@ def register(request: Request, payload: UserRegister, db: Session = Depends(get_
         is_organization=payload.is_organization,
     )
     db.add(user)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:  # the unique email index; also catches two sign-ups racing
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered") from None
     if payload.is_organization:
         # publishing is blocked until a moderator approves this profile
         db.add(Organization(user_id=user.id, org_name=payload.org_name))

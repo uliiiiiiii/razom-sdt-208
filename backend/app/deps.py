@@ -1,9 +1,11 @@
-"""FastAPI dependencies: DB session and current user from JWT."""
+"""FastAPI dependencies: DB session, current user from JWT, list paging."""
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, status
+from dataclasses import dataclass
+
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from .database import get_db
@@ -74,3 +76,25 @@ def require_verified_org(org: Organization = Depends(get_my_organization)) -> Or
     if org.verification_status != "approved":
         raise HTTPException(status_code=403, detail="Organization is not verified yet")
     return org
+
+
+@dataclass(frozen=True)
+class Page:
+    limit: int
+    before: int | None
+
+
+def page_params(
+    limit: int = Query(50, ge=1, le=200),
+    before: int | None = Query(None, ge=1, description="id of the last row already seen"),
+) -> Page:
+    """Load-older paging, newest first; a page shorter than `limit` is the last one."""
+    return Page(limit, before)
+
+
+def paginate(stmt: Select, id_col, page: Page) -> Select:
+    """Keyset paging on an ever-growing id: stable while new rows arrive.
+    `stmt` must not have its own order_by."""
+    if page.before is not None:
+        stmt = stmt.where(id_col < page.before)
+    return stmt.order_by(id_col.desc()).limit(page.limit)

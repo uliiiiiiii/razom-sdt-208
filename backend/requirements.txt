@@ -11,3 +11,5 @@ python-multipart==0.0.19
 
 alembic==1.14.0
 slowapi==0.1.9
+cryptography==44.0.0
+Pillow==11.1.0

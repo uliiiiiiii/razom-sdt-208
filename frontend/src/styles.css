@@ -1158,3 +1158,5 @@ body[data-mode="map"] .leaflet-bottom.leaflet-left { margin-left: 360px; }
   .who { display: none; }
   .topbar { padding-left: 14px; }
 }
+
+.mine { margin-bottom: 16px; }

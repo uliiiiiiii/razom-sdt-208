@@ -3,7 +3,7 @@
 A mutual-aid map web platform connecting residents who need help with volunteers and verified organizations — built for war / blackout conditions where needs (charging a phone, delivering water/medicine, walking shelter dogs) are scattered across chats and lost in minutes.
 
 > **Team:** Uliana Matviienko, Bogdan Borachuk
-> **Stack:** FastAPI · PostgreSQL + PostGIS · JWT auth · Leaflet (HTML) frontend
+> **Stack:** FastAPI · PostgreSQL + PostGIS · JWT auth · Vite + Leaflet frontend
 
 This repository is at the **Beta** stage (Stage 3): the backend is complete; the new frontend is in progress. The Alpha is described in [`Alpha Version Report.md`](./Alpha%20Version%20Report.md).
 
@@ -30,6 +30,11 @@ pip install -r requirements.txt
 export DATABASE_URL="postgresql+psycopg2://razom:razom@localhost:5433/razom"
 # required, at least 32 characters; the app refuses to start without it
 export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+# required, at least 32 characters; encrypts identity-verification images.
+# Generate ONCE and keep it (e.g. in an untracked .env or your shell profile), then reuse it:
+# changing it makes stored photos and pending ID images unreadable and breaks duplicate detection.
+#   python -c 'import secrets; print(secrets.token_urlsafe(48))'
+export VERIFICATION_KEY="<your saved key>"
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -48,9 +53,9 @@ Tests use a separate database `razom_test` on the same server (created automatic
 
 ### 4. Demo data (development only)
 ```bash
-python -m app.demo_seed
+python -m app.demo_seed            # re-run before a demo: it wipes and seeds again
 ```
-Creates one account per role (resident, volunteer, approved and pending organization, moderator; password `demo-pass-123`) plus requests and opportunities in Kyiv. Refuses to run on a database with real users.
+Fills the map with about 40 open requests across Kyiv and creates demo accounts in every state: a request at each step, claims waiting or accepted, approved, pending and rejected organizations, a moderation queue, identity verification in every state (approved, pending, rejected, revoked, none) with verified-only requests, and a blocked user. The seeder needs `VERIFICATION_KEY` set. Every account uses password `demo-pass-123`; the full list is in [`docs/FRONTEND-API.md`](./docs/FRONTEND-API.md). The data is the same on every run. Each run wipes the database first, so re-run it before a demo: waiting claims expire after 12 hours and fresh requests age. It refuses to run on a database with any real user.
 
 ### 5. Open the app
 - **API docs (Swagger):** http://localhost:8000/docs
@@ -76,7 +81,7 @@ razom-sdt-208/
 │   │   ├── migrations/             # Alembic: 0001 baseline, 0002 beta, 0003 review fixes
 │   │   └── routers/                # auth, requests, me, map, opportunities, reports, moderation
 │   └── tests/                      # pytest against a real PostGIS test database
-└── frontend/                       # web client (being replaced by the Beta frontend)
+└── frontend/                       # Vite web client (map, requests, auth)
 ```
 
 ## Environment variables
@@ -84,6 +89,7 @@ razom-sdt-208/
 |---|---|---|
 | `DATABASE_URL` | `postgresql+psycopg2://razom:razom@localhost:5433/razom` | Postgres connection |
 | `JWT_SECRET` | *(none, required, ≥ 32 chars)* | JWT signing secret |
+| `VERIFICATION_KEY` | *(none, required, ≥ 32 chars)* | Derives the keys that encrypt verification images and fingerprint document numbers. Changing it makes stored images unreadable |
 | `CORS_ORIGINS` | *(empty = CORS off)* | Comma-separated allowed origins; not needed with the Vite proxy |
 | `RATE_LIMIT_ENABLED` | `true` | Per-IP rate limits on login, register, new requests, reports |
 | `BCRYPT_ROUNDS` | `12` | Password hashing cost (tests lower it) |

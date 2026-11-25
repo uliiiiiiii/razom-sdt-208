@@ -20,7 +20,8 @@ from .database import SessionLocal
 from .migrate import upgrade_to_head
 from .ratelimit import limiter, rate_limit_exceeded
 from .retention import purge_closed_addresses
-from .routers import auth, map, me, moderation, opportunities, reports, requests
+from .verification import expire_stale
+from .routers import auth, map, me, moderation, opportunities, reports, requests, verification
 
 
 RETENTION_INTERVAL_SECONDS = 24 * 3600
@@ -29,6 +30,7 @@ RETENTION_INTERVAL_SECONDS = 24 * 3600
 def _purge() -> None:
     with SessionLocal() as db:
         purge_closed_addresses(db)
+        expire_stale(db)
 
 
 async def _purge_daily() -> None:
@@ -54,10 +56,12 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded)
 
 # Same-origin only: scripts, styles and API calls from this server; map tiles
-# from OpenStreetMap. Limits the damage any XSS bug could do with the token.
+# from OpenStreetMap; blob: for protected photos the page fetches with its
+# token (only the page's own scripts can create blob URLs). Limits the damage
+# any XSS bug could do with the token.
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
-    "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
+    "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
     "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; "
     "frame-ancestors 'none'"
 )
@@ -71,7 +75,9 @@ async def security_headers(request: Request, call_next):
     if not request.url.path.startswith(DOCS_PATHS):
         response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "no-referrer"
+    # OSM tile servers refuse requests without a Referer; cross-site we send
+    # only the origin, never a path
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
 
@@ -88,12 +94,15 @@ api = APIRouter(prefix="/api")
 
 @api.get("/health", tags=["meta"])
 def health() -> dict:
-    return {"status": "ok", "service": "razom", "version": "0.2.0-beta"}
+    return {"status": "ok", "service": "razom", "version": app.version}
 
 
 api.include_router(auth.router)
 api.include_router(requests.router)
 api.include_router(me.router)
+api.include_router(verification.router)
+api.include_router(verification.moderation_router)
+api.include_router(verification.users_router)
 api.include_router(opportunities.router)
 api.include_router(map.router)
 api.include_router(reports.router)

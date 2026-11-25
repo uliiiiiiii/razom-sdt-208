@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, aliased
 
+from .. import verification
 from ..database import get_db
-from ..deps import require_roles
+from ..deps import Page, page_params, paginate, require_roles
 from ..models import (
     AddressAccess,
     HelpRequest,
@@ -60,15 +61,26 @@ moderator = require_roles("moderator")
 @router.get("/reports", response_model=list[ReportOut])
 def list_reports(
     status: Literal["open", "dismissed", "actioned"] = "open",
+    page: Page = Depends(page_params),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    rows = db.execute(
-        select(Report, User)
+    other = aliased(Report)
+    open_on_target = (
+        select(func.count(other.id))
+        .where(
+            other.target_type == Report.target_type,
+            other.target_id == Report.target_id,
+            other.status == "open",
+        )
+        .scalar_subquery()
+    )
+    stmt = (
+        select(Report, User, open_on_target)
         .join(User, User.id == Report.reporter_id)
         .where(Report.status == status)
-        .order_by(Report.created_at.desc(), Report.id.desc())
-    ).all()
-    return [_report_out(db, r, u) for r, u in rows]
+    )
+    rows = db.execute(paginate(stmt, Report.id, page)).all()
+    return [_report_out(db, r, u, n) for r, u, n in rows]
 
 
 @router.get("/reports/{report_id}", response_model=ReportDetail)
@@ -110,6 +122,7 @@ def decide_report(
         if owner.id == mod.id:
             raise HTTPException(400, detail="You can't block yourself")
         set_hidden(db, owner, True)
+        verification.on_moderator_block(db, owner)
         outcome = "actioned"
     resolve_reports(db, report.target_type, report.target_id, outcome)
     db.commit()
@@ -210,12 +223,14 @@ def stats(db: Session = Depends(get_db)) -> dict:
 # users
 # ---------------------------------------------------------------------------
 @router.get("/users", response_model=list[UserAdmin])
-def search_users(q: str = "", db: Session = Depends(get_db)) -> list[User]:
-    stmt = select(User).order_by(User.created_at.desc()).limit(50)
+def search_users(
+    q: str = "", page: Page = Depends(page_params), db: Session = Depends(get_db)
+) -> list[User]:
+    stmt = select(User)
     if q:
-        like = f"%{q.lower()}%"
+        like = f"%{q}%"
         stmt = stmt.where(or_(User.email.ilike(like), User.display_name.ilike(like)))
-    return list(db.scalars(stmt))
+    return list(db.scalars(paginate(stmt, User.id, page)))
 
 
 @router.patch("/users/{user_id}", response_model=UserAdmin)
@@ -231,8 +246,15 @@ def update_user(
     if user is None:
         raise HTTPException(404, detail="User not found")
     changes = payload.model_dump(exclude_none=True)
+    comment = changes.pop("verification_comment", None)
+    if "is_verified" in changes:  # only ever False (schema)
+        verification.revoke(db, user, comment)
+        del changes["is_verified"]
     if "is_blocked" in changes:
-        set_hidden(db, user, changes.pop("is_blocked"))  # also releases their claims
+        blocked = changes.pop("is_blocked")
+        set_hidden(db, user, blocked)  # also releases their claims
+        if blocked:  # a moderator's block revokes; the 3-report auto-block doesn't
+            verification.on_moderator_block(db, user)
     for field, value in changes.items():
         setattr(user, field, value)
     db.commit()
@@ -244,17 +266,18 @@ def update_user(
 # address access audit
 # ---------------------------------------------------------------------------
 @router.get("/access-log", response_model=list[AccessLogEntry])
-def access_log(request_id: int | None = None, db: Session = Depends(get_db)) -> list[dict]:
-    stmt = (
-        select(AddressAccess, User)
-        .join(User, User.id == AddressAccess.user_id)
-        .order_by(AddressAccess.accessed_at.desc())
-        .limit(200)
-    )
+def access_log(
+    request_id: int | None = None,
+    page: Page = Depends(page_params),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    stmt = select(AddressAccess, User).join(User, User.id == AddressAccess.user_id)
     if request_id is not None:
         stmt = stmt.where(AddressAccess.request_id == request_id)
+    stmt = paginate(stmt, AddressAccess.id, page)
     return [
         {
+            "id": a.id,
             "request_id": a.request_id,
             "user": {"id": u.id, "display_name": u.display_name},
             "via": a.via,
@@ -274,7 +297,7 @@ def _get_report(db: Session, report_id: int) -> Report:
     return report
 
 
-def _report_out(db: Session, report: Report, reporter: User) -> dict:
+def _report_out(db: Session, report: Report, reporter: User, open_count: int | None = None) -> dict:
     return {
         "id": report.id,
         "target_type": report.target_type,
@@ -283,7 +306,9 @@ def _report_out(db: Session, report: Report, reporter: User) -> dict:
         "status": report.status,
         "created_at": report.created_at,
         "reporter": {"id": reporter.id, "display_name": reporter.display_name},
-        "open_reports_on_target": open_report_count(db, report.target_type, report.target_id),
+        "open_reports_on_target": open_count
+        if open_count is not None
+        else open_report_count(db, report.target_type, report.target_id),
     }
 
 
@@ -292,8 +317,9 @@ def _target_out(db: Session, report: Report, mod: User) -> dict | None:
     if target is None:
         return None
     if isinstance(target, HelpRequest):
-        # exact address only while the report is open; the reveal is logged
-        via = "report_review" if report.status == "open" else None
+        # exact address only while the report is open and someone else filed it
+        # (a moderator's own report is no pretext to read it); the reveal is logged
+        via = "report_review" if report.status == "open" and report.reporter_id != mod.id else None
         return serialize_request(db, target, mod, via=via)
     if isinstance(target, User):
         return {

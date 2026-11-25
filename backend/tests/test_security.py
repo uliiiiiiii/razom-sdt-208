@@ -6,7 +6,7 @@ from conftest import make_user
 
 CSP = (
     "default-src 'self'; "
-    "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
+    "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
     "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; "
     "frame-ancestors 'none'"
 )
@@ -26,7 +26,7 @@ def test_security_headers(client, path):
     r = client.get(path)
     assert r.headers["content-security-policy"] == CSP
     assert r.headers["x-content-type-options"] == "nosniff"
-    assert r.headers["referrer-policy"] == "no-referrer"
+    assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
 
 
 def test_login_rate_limit(client, rate_limited):

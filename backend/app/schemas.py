@@ -65,6 +65,8 @@ class UserOut(BaseModel):
     email: str
     display_name: str
     roles: list[str]
+    is_verified: bool
+    only_verified_residents: bool
 
 
 class RequestCreate(BaseModel):
@@ -77,6 +79,7 @@ class RequestCreate(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     address: str | None = Field(None, max_length=300)
+    verified_only: bool = False  # only verified volunteers may claim it
 
 
 class MapItem(BaseModel):
@@ -93,6 +96,8 @@ class MapItem(BaseModel):
     detail: str | None = None  # one line of the description, never an address
     start_time: datetime | None = None  # opportunities only
     slots_left: int | None = None  # opportunities only
+    verified_only: bool | None = None  # requests only
+    author_verified: bool | None = None  # requests only
 
 
 class ClaimRef(BaseModel):
@@ -107,6 +112,9 @@ class ClaimerInfo(BaseModel):
     claim_id: int | None  # send back on accept/decline (None once the claim is over)
     display_name: str
     confirmed_count: int
+    user_id: int
+    is_verified: bool
+    photo_url: str | None  # /api/users/{id}/photo when verified
 
 
 class RequestOut(BaseModel):
@@ -126,6 +134,10 @@ class RequestOut(BaseModel):
     accepted: bool
     is_hidden: bool = False  # hidden by a moderator or by 3 reports
     claimer: ClaimerInfo | None = None  # only for the author
+    verified_only: bool = False
+    author_verified: bool
+    # only for the accepted claimer of a verified author (the address is visible too)
+    author_photo_url: str | None = None
     created_at: datetime
     closed_at: datetime | None = None
 
@@ -281,9 +293,13 @@ class UserAdmin(UserOut):
 class UserUpdate(BaseModel):
     is_blocked: bool | None = None
     is_moderator: bool | None = None
+    # revoke only: the badge is granted by a review, never by this PATCH
+    is_verified: Literal[False] | None = None
+    verification_comment: str | None = Field(None, max_length=500)  # shown to the user
 
 
 class AccessLogEntry(BaseModel):
+    id: int
     request_id: int
     user: VolunteerRef
     via: str
@@ -312,3 +328,67 @@ class PlatformStats(BaseModel):
 
 class VisibilityUpdate(BaseModel):
     is_hidden: bool
+
+
+# ---------------------------------------------------------------------------
+# identity verification (user side)
+# ---------------------------------------------------------------------------
+class ChallengeOut(BaseModel):
+    word: str
+    expires_at: datetime
+
+
+class MyVerification(BaseModel):
+    status: str
+    word: str | None = None
+    expires_at: datetime | None = None
+    submitted_at: datetime | None = None
+    decided_at: datetime | None = None
+    comment: str | None = None
+
+
+class VerificationDecision(BaseModel):
+    decision: Literal["approved", "rejected"]
+    comment: str | None = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def _reject_needs_comment(self):
+        self.comment = (self.comment or "").strip() or None
+        if self.decision == "rejected" and not self.comment:
+            raise ValueError("A comment is required when rejecting")
+        return self
+
+
+class DuplicateRef(BaseModel):
+    id: int
+    display_name: str
+
+
+class ReviewUser(BaseModel):
+    id: int
+    display_name: str
+    roles: list[str]
+
+
+class VerificationReview(BaseModel):
+    id: int
+    user: ReviewUser
+    submitted_at: datetime | None
+    duplicates: list[DuplicateRef]
+    images: list[str] | None = None  # kinds still stored; only on the detail route
+
+
+class VerificationAccessEntry(BaseModel):
+    id: int
+    verification_id: int
+    moderator: VolunteerRef
+    kind: str
+    accessed_at: datetime
+
+
+class SettingsIn(BaseModel):
+    only_verified_residents: bool
+
+
+class SettingsOut(BaseModel):
+    only_verified_residents: bool
