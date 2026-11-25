@@ -48,7 +48,11 @@ def photo_url(user: User) -> str | None:
 
 def photo_visible_to(db: Session, owner: User, viewer: User) -> bool:
     """May `viewer` see `owner`'s profile photo? (The caller 404s otherwise.)"""
-    if owner.id == viewer.id or viewer.is_moderator:
+    if viewer.is_moderator:
+        return True
+    if owner.is_blocked:  # a blocked account is invisible, whoever it dealt with
+        return False
+    if owner.id == viewer.id:
         return True
     # the volunteer's photo: to the author of a request they currently hold
     holds = db.scalar(

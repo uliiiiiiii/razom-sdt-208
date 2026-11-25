@@ -293,6 +293,9 @@ class UserAdmin(UserOut):
 class UserUpdate(BaseModel):
     is_blocked: bool | None = None
     is_moderator: bool | None = None
+    # revoke only: the badge is granted by a review, never by this PATCH
+    is_verified: Literal[False] | None = None
+    verification_comment: str | None = Field(None, max_length=500)  # shown to the user
 
 
 class AccessLogEntry(BaseModel):

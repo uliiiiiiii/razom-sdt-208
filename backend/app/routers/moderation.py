@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
+from .. import verification
 from ..database import get_db
 from ..deps import Page, page_params, paginate, require_roles
 from ..models import (
@@ -121,6 +122,7 @@ def decide_report(
         if owner.id == mod.id:
             raise HTTPException(400, detail="You can't block yourself")
         set_hidden(db, owner, True)
+        verification.on_moderator_block(db, owner)
         outcome = "actioned"
     resolve_reports(db, report.target_type, report.target_id, outcome)
     db.commit()
@@ -244,8 +246,15 @@ def update_user(
     if user is None:
         raise HTTPException(404, detail="User not found")
     changes = payload.model_dump(exclude_none=True)
+    comment = changes.pop("verification_comment", None)
+    if "is_verified" in changes:  # only ever False (schema)
+        verification.revoke(db, user, comment)
+        del changes["is_verified"]
     if "is_blocked" in changes:
-        set_hidden(db, user, changes.pop("is_blocked"))  # also releases their claims
+        blocked = changes.pop("is_blocked")
+        set_hidden(db, user, blocked)  # also releases their claims
+        if blocked:  # a moderator's block revokes; the 3-report auto-block doesn't
+            verification.on_moderator_block(db, user)
     for field, value in changes.items():
         setattr(user, field, value)
     db.commit()

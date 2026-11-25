@@ -141,10 +141,11 @@ def claim_request(
             "SET status = 'claimed', claimed_by = :uid, claimed_at = now(), updated_at = now() "
             "WHERE id = :rid AND status = 'open' AND NOT is_hidden AND author_id <> :uid "
             "AND author_id NOT IN (SELECT id FROM users WHERE is_blocked) "
-            "AND (NOT verified_only OR :verified) "
+            # read at UPDATE time, not from the user loaded earlier: a revoke may commit in between
+            "AND (NOT verified_only OR (SELECT is_verified FROM users WHERE id = :uid)) "
             "RETURNING id"
         ),
-        {"uid": user.id, "rid": request_id, "verified": user.is_verified},
+        {"uid": user.id, "rid": request_id},
     )
     if result.first() is None:
         db.rollback()

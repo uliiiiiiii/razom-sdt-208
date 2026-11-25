@@ -4,9 +4,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.orm import Session
 
+from .claims import release_verified_only_claims_of
 from .images import ImageRejected, encrypt, fingerprint, normalize_document_number, prepare_image
 from .models import IdentityVerification, User, VerificationImage
 
@@ -143,3 +144,67 @@ def decide(
     v.status, v.comment, v.decided_by, v.decided_at = decision, comment, moderator.id, _now()
     db.commit()
     return v
+
+
+def revoke(db: Session, user: User, comment: str | None = None) -> None:
+    """Take the badge away (caller commits): the approved row becomes `revoked`,
+    the photo is deleted, and claims on verified-only requests go back to the map.
+    Locks the user row first, so a concurrent claim either sees the revoke or is released by it."""
+    db.flush()  # _lock refreshes the user; keep the caller's pending changes
+    _lock(db, user)
+    if not user.is_verified:
+        return
+    row = db.scalar(
+        select(IdentityVerification)
+        .where(IdentityVerification.user_id == user.id, IdentityVerification.status == "approved")
+        .order_by(IdentityVerification.id.desc())
+        .limit(1)
+    )
+    if row is not None:
+        row.status, row.comment = "revoked", comment
+    photo, user.photo_image_id = user.photo_image_id, None
+    user.is_verified, user.verified_at = False, None
+    db.flush()
+    if photo is not None:
+        db.execute(delete(VerificationImage).where(VerificationImage.id == photo))
+    release_verified_only_claims_of(db, user.id)
+
+
+def _expire(db: Session, where) -> int:
+    """Set matching started/pending rows to `expired` and delete their images."""
+    ids = db.scalars(
+        update(IdentityVerification)
+        .where(IdentityVerification.status.in_(("started", "pending")), where)
+        .values(status="expired")
+        .returning(IdentityVerification.id)
+    ).all()
+    if ids:
+        db.execute(delete(VerificationImage).where(VerificationImage.verification_id.in_(ids)))
+    return len(ids)
+
+
+def on_moderator_block(db: Session, user: User) -> None:
+    """A moderator's block (never the 3-report auto-block): revoke, and expire any
+    submission in progress. Caller commits."""
+    revoke(db, user)
+    _expire(db, IdentityVerification.user_id == user.id)
+
+
+def expire_stale(db: Session) -> int:
+    """Daily purge: unreviewed submissions after PENDING_TTL, lapsed challenges."""
+    now = _now()
+    n = _expire(
+        db,
+        or_(
+            and_(
+                IdentityVerification.status == "pending",
+                IdentityVerification.submitted_at < now - PENDING_TTL,
+            ),
+            and_(
+                IdentityVerification.status == "started",
+                IdentityVerification.challenge_expires_at < now,
+            ),
+        ),
+    )
+    db.commit()
+    return n

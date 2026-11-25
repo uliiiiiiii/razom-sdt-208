@@ -20,6 +20,7 @@ from .database import SessionLocal
 from .migrate import upgrade_to_head
 from .ratelimit import limiter, rate_limit_exceeded
 from .retention import purge_closed_addresses
+from .verification import expire_stale
 from .routers import auth, map, me, moderation, opportunities, reports, requests, verification
 
 
@@ -29,6 +30,7 @@ RETENTION_INTERVAL_SECONDS = 24 * 3600
 def _purge() -> None:
     with SessionLocal() as db:
         purge_closed_addresses(db)
+        expire_stale(db)
 
 
 async def _purge_daily() -> None:
