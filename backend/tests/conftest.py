@@ -164,3 +164,15 @@ def png_bytes(size=(64, 64), color="red", fmt="PNG", exif: dict | None = None) -
         kwargs["exif"] = e
     img.save(buf, format=fmt, **kwargs)
     return buf.getvalue()
+
+
+def submit_verification(client, user: dict, number: str = "AB123456") -> dict:
+    """Start a verification, then submit three images; returns the JSON."""
+    r = client.post("/api/me/verification/start", headers=user["h"])
+    assert r.status_code == 200, r.text
+    files = {k: (f"{k}.png", png_bytes(), "image/png") for k in ("id_document", "selfie", "profile")}
+    r = client.post(
+        "/api/me/verification", headers=user["h"], files=files, data={"document_number": number}
+    )
+    assert r.status_code == 200, r.text
+    return r.json()

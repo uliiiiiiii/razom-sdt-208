@@ -20,6 +20,8 @@ LOGIN_LIMIT = "10/minute"
 REGISTER_LIMIT = "5/hour"
 CREATE_REQUEST_LIMIT = "10/hour"
 REPORT_LIMIT = "20/hour"
+VERIFICATION_START_LIMIT = "10/hour"
+VERIFICATION_SUBMIT_LIMIT = "5/hour"
 
 limiter = Limiter(key_func=get_remote_address, enabled=settings.rate_limit_enabled)
 

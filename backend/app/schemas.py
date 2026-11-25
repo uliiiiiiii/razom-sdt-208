@@ -313,3 +313,28 @@ class PlatformStats(BaseModel):
 
 class VisibilityUpdate(BaseModel):
     is_hidden: bool
+
+
+# ---------------------------------------------------------------------------
+# identity verification (user side)
+# ---------------------------------------------------------------------------
+class ChallengeOut(BaseModel):
+    word: str
+    expires_at: datetime
+
+
+class MyVerification(BaseModel):
+    status: str
+    word: str | None = None
+    expires_at: datetime | None = None
+    submitted_at: datetime | None = None
+    decided_at: datetime | None = None
+    comment: str | None = None
+
+
+class SettingsIn(BaseModel):
+    only_verified_residents: bool
+
+
+class SettingsOut(BaseModel):
+    only_verified_residents: bool
