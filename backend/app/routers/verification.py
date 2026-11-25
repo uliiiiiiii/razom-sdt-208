@@ -1,4 +1,5 @@
-"""Identity verification, user side: /api/me/verification and /api/me/settings.
+"""Identity verification: /api/me/verification and /api/me/settings, the moderator
+review, and profile photos (/api/users/{id}/photo).
 
 No `from __future__ import annotations`: the routes are rate limited (see ratelimit.py).
 """
@@ -9,10 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import verification as v
+from ..claims import expire_unaccepted_claims
 from ..database import get_db
 from ..deps import Page, get_current_user, page_params, paginate, require_roles
 from ..images import MAX_UPLOAD_BYTES, decrypt
 from ..models import IdentityVerification, User, VerificationAccess, VerificationImage
+from ..privacy import photo_visible_to
 from ..ratelimit import VERIFICATION_START_LIMIT, VERIFICATION_SUBMIT_LIMIT, limiter
 from ..schemas import (
     ChallengeOut,
@@ -25,6 +28,9 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/me", tags=["verification"])
+
+# decrypted images must not sit in any cache
+NO_STORE = {"Cache-Control": "private, no-store"}
 
 
 def _mine(row) -> dict:
@@ -153,9 +159,7 @@ def review_image(
         raise HTTPException(404, "Image not found")
     db.add(VerificationAccess(verification_id=vid, moderator_id=mod.id, kind=kind))
     db.commit()
-    return Response(
-        decrypt(image.data), media_type="image/jpeg", headers={"Cache-Control": "private, no-store"}
-    )
+    return Response(decrypt(image.data), media_type="image/jpeg", headers=NO_STORE)
 
 
 @moderation_router.patch("/verifications/{vid}", response_model=VerificationReview)
@@ -189,3 +193,26 @@ def verification_access_log(
         }
         for a, u in db.execute(paginate(stmt, VerificationAccess.id, page)).all()
     ]
+
+
+# ---------------------------------------------------------------------------
+# profile photos
+# ---------------------------------------------------------------------------
+users_router = APIRouter(prefix="/users", tags=["verification"])
+
+
+@users_router.get("/{user_id}/photo", response_class=Response)
+def user_photo(user_id: int, db: Session = Depends(get_db), viewer: User = Depends(get_current_user)):
+    """Unknown user, no photo and not allowed are the same 404, so the answer
+    never tells whether someone has a photo. Views aren't logged: the photo is
+    meant for the other party."""
+    expire_unaccepted_claims(db)  # a lapsed claim no longer shows the volunteer's photo
+    owner = db.get(User, user_id)
+    image = (
+        db.get(VerificationImage, owner.photo_image_id)
+        if owner is not None and owner.is_verified and owner.photo_image_id is not None
+        else None
+    )
+    if image is None or not photo_visible_to(db, owner, viewer):
+        raise HTTPException(404, "Photo not found")
+    return Response(decrypt(image.data), media_type="image/jpeg", headers=NO_STORE)

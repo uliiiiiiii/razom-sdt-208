@@ -9,6 +9,9 @@ Who may see what:
   via="report_review");
 - everyone else sees the approximate location and no address.
 Every reveal to someone other than the author is written to address_access_log.
+
+Profile photos (verified users only) follow the same moments: the volunteer's
+photo once they claim, the resident's once they accept (photo_visible_to).
 """
 from __future__ import annotations
 
@@ -37,6 +40,35 @@ def visible_to(req: HelpRequest, viewer: User) -> bool:
     if viewer.id in (req.author_id, req.claimed_by):
         return True
     return req.status == "open" and not req.is_hidden and not req.author.is_blocked
+
+
+def photo_url(user: User) -> str | None:
+    return f"/api/users/{user.id}/photo" if user.is_verified else None
+
+
+def photo_visible_to(db: Session, owner: User, viewer: User) -> bool:
+    """May `viewer` see `owner`'s profile photo? (The caller 404s otherwise.)"""
+    if owner.id == viewer.id or viewer.is_moderator:
+        return True
+    # the volunteer's photo: to the author of a request they currently hold
+    holds = db.scalar(
+        select(HelpRequest.id)
+        .where(
+            HelpRequest.author_id == viewer.id,
+            HelpRequest.claimed_by == owner.id,
+            HelpRequest.status.in_(ACTIVE_CLAIM_STATUSES),
+        )
+        .limit(1)
+    )
+    if holds is not None:
+        return True
+    # the resident's photo: to the accepted claimer, exactly while the address is visible
+    claimed = db.scalars(
+        select(HelpRequest).where(
+            HelpRequest.author_id == owner.id, HelpRequest.claimed_by == viewer.id
+        )
+    )
+    return any(can_see_exact(r, viewer) for r in claimed)
 
 
 # Repeat views by the same person within this window are one log entry, so
@@ -85,6 +117,9 @@ def serialize_request(
             "claim_id": active_claim_id(db, req),
             "display_name": req.claimer.display_name,
             "confirmed_count": _confirmed_count(db, req.claimed_by),
+            "user_id": req.claimed_by,
+            "is_verified": req.claimer.is_verified,
+            "photo_url": photo_url(req.claimer),
         }
 
     return {
@@ -102,6 +137,12 @@ def serialize_request(
         "accepted": req.accepted_at is not None,
         "is_hidden": req.is_hidden,
         "claimer": claimer,
+        "verified_only": req.verified_only,
+        "author_verified": req.author.is_verified,
+        # the author's photo goes only to the accepted claimer (can_see_exact, not report review)
+        "author_photo_url": photo_url(req.author)
+        if not is_mine and can_see_exact(req, viewer)
+        else None,
         "created_at": req.created_at,
         "closed_at": req.closed_at,
     }

@@ -30,6 +30,7 @@ MAX_CLAIMS_PER_VOLUNTEER = 2
 MAX_CLAIMS_PER_DAY = 5  # claim -> release loops would otherwise harvest addresses
 
 NOT_FOUND = "Request not found"
+VERIFIED_ONLY = "This request is for verified volunteers only"
 
 # Allowed transitions per action: action -> (allowed from-states, to-state).
 # Keyed by action, not just by state, so e.g. 'reopen' can't be used to
@@ -76,6 +77,7 @@ def create_request(
         location=point_wkt(payload.latitude, payload.longitude),
         approx_location=point_wkt(approx_lat, approx_lng),
         address=payload.address,
+        verified_only=payload.verified_only,
     )
     db.add(help_request)
     db.commit()
@@ -131,16 +133,18 @@ def claim_request(
     if declined:
         raise HTTPException(409, detail="The resident declined your help with this request")
 
-    # Atomic, concurrency-safe claim: only succeeds if the row is still 'open'.
+    # Atomic, concurrency-safe claim: only succeeds if the row is still 'open'
+    # (and, for a verified-only request, the volunteer is verified).
     result = db.execute(
         text(
             "UPDATE help_requests "
             "SET status = 'claimed', claimed_by = :uid, claimed_at = now(), updated_at = now() "
             "WHERE id = :rid AND status = 'open' AND NOT is_hidden AND author_id <> :uid "
             "AND author_id NOT IN (SELECT id FROM users WHERE is_blocked) "
+            "AND (NOT verified_only OR :verified) "
             "RETURNING id"
         ),
-        {"uid": user.id, "rid": request_id},
+        {"uid": user.id, "rid": request_id, "verified": user.is_verified},
     )
     if result.first() is None:
         db.rollback()
@@ -149,6 +153,8 @@ def claim_request(
             raise HTTPException(404, detail=NOT_FOUND)
         if request.author_id == user.id:
             raise HTTPException(409, detail="You cannot claim your own request")
+        if request.verified_only and not user.is_verified:
+            raise HTTPException(403, detail=VERIFIED_ONLY)
         # e.g. lost a race with another volunteer; the status isn't disclosed
         raise HTTPException(409, detail="Request is no longer open")
     db.add(ClaimHistory(request_id=request_id, volunteer_id=user.id))

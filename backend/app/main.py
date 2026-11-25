@@ -54,10 +54,12 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded)
 
 # Same-origin only: scripts, styles and API calls from this server; map tiles
-# from OpenStreetMap. Limits the damage any XSS bug could do with the token.
+# from OpenStreetMap; blob: for protected photos the page fetches with its
+# token (only the page's own scripts can create blob URLs). Limits the damage
+# any XSS bug could do with the token.
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
-    "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
+    "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
     "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; "
     "frame-ancestors 'none'"
 )
@@ -98,6 +100,7 @@ api.include_router(requests.router)
 api.include_router(me.router)
 api.include_router(verification.router)
 api.include_router(verification.moderation_router)
+api.include_router(verification.users_router)
 api.include_router(opportunities.router)
 api.include_router(map.router)
 api.include_router(reports.router)

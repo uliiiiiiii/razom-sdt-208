@@ -65,6 +65,8 @@ class UserOut(BaseModel):
     email: str
     display_name: str
     roles: list[str]
+    is_verified: bool
+    only_verified_residents: bool
 
 
 class RequestCreate(BaseModel):
@@ -77,6 +79,7 @@ class RequestCreate(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     address: str | None = Field(None, max_length=300)
+    verified_only: bool = False  # only verified volunteers may claim it
 
 
 class MapItem(BaseModel):
@@ -93,6 +96,8 @@ class MapItem(BaseModel):
     detail: str | None = None  # one line of the description, never an address
     start_time: datetime | None = None  # opportunities only
     slots_left: int | None = None  # opportunities only
+    verified_only: bool | None = None  # requests only
+    author_verified: bool | None = None  # requests only
 
 
 class ClaimRef(BaseModel):
@@ -107,6 +112,9 @@ class ClaimerInfo(BaseModel):
     claim_id: int | None  # send back on accept/decline (None once the claim is over)
     display_name: str
     confirmed_count: int
+    user_id: int
+    is_verified: bool
+    photo_url: str | None  # /api/users/{id}/photo when verified
 
 
 class RequestOut(BaseModel):
@@ -126,6 +134,10 @@ class RequestOut(BaseModel):
     accepted: bool
     is_hidden: bool = False  # hidden by a moderator or by 3 reports
     claimer: ClaimerInfo | None = None  # only for the author
+    verified_only: bool = False
+    author_verified: bool
+    # only for the accepted claimer of a verified author (the address is visible too)
+    author_photo_url: str | None = None
     created_at: datetime
     closed_at: datetime | None = None
 

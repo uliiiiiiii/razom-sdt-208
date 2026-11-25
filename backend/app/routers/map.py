@@ -3,6 +3,7 @@
 Requests are returned at their APPROXIMATE point and never with an address.
 Hidden content, content of blocked users, past/closed opportunities and
 opportunities of organizations that aren't approved are left out.
+A viewer with `only_verified_residents` gets only requests of verified authors.
 """
 from __future__ import annotations
 
@@ -42,13 +43,15 @@ def search_map(
     point = point_wkt(lat, lng)
     items: list[dict] = []
     if kind in ("all", "request"):
-        items += _requests(db, point, radius, category)
+        items += _requests(db, point, radius, category, _user.only_verified_residents)
     if kind in ("all", "opportunity"):
         items += _opportunities(db, point, radius, category)
     return sorted(items, key=lambda i: (i["distance_m"], i["type"], i["id"]))[:MAP_LIMIT]
 
 
-def _requests(db: Session, point, radius: int, category: str | None) -> list[dict]:
+def _requests(
+    db: Session, point, radius: int, category: str | None, verified_authors_only: bool
+) -> list[dict]:
     loc = HelpRequest.approx_location
     stmt = (
         select(
@@ -57,6 +60,8 @@ def _requests(db: Session, point, radius: int, category: str | None) -> list[dic
             HelpRequest.title,
             HelpRequest.description,
             HelpRequest.created_at,
+            HelpRequest.verified_only,
+            User.is_verified.label("author_verified"),
             lat_expr(loc).label("lat"),
             lng_expr(loc).label("lng"),
             func.ST_Distance(loc, point).label("dist"),
@@ -71,9 +76,13 @@ def _requests(db: Session, point, radius: int, category: str | None) -> list[dic
     )
     if category:
         stmt = stmt.where(HelpRequest.category == category)
+    if verified_authors_only:
+        stmt = stmt.where(User.is_verified.is_(True))
     stmt = stmt.order_by("dist", HelpRequest.id).limit(MAP_LIMIT)
     return [
-        _item("request", r, start_time=None, slots_left=None) for r in db.execute(stmt)
+        _item("request", r, start_time=None, slots_left=None)
+        | {"verified_only": r.verified_only, "author_verified": r.author_verified}
+        for r in db.execute(stmt)
     ]
 
 
