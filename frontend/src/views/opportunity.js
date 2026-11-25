@@ -27,6 +27,9 @@ export async function renderOpportunity(app, id) {
     } else {
       actions = `<button class="btn" id="signupBtn">Sign up</button>`;
     }
+    if (!o.is_owner) {
+      actions += ` <button class="btn secondary" id="reportBtn">${icon("flag", 15)} Report</button>`;
+    }
     page.innerHTML = `
       <div class="page-head"><a class="back" href="#/">${icon("chevron", 16)} Map</a></div>
       <section class="card">
@@ -55,6 +58,18 @@ export async function renderOpportunity(app, id) {
       cancelBtn.disabled = true;
       try { await API.del(`/opportunities/${id}/signups/me`); renderOpportunity(app, id); }
       catch (ex) { const e = page.querySelector("#oErr"); e.hidden = false; e.textContent = ex.message; cancelBtn.disabled = false; }
+    };
+    const reportBtn = page.querySelector("#reportBtn");
+    if (reportBtn) reportBtn.onclick = async () => {
+      const reason = window.prompt("Why are you reporting this offer? (3–500 characters)");
+      if (!reason || !reason.trim()) return;
+      const err = page.querySelector("#oErr");
+      try {
+        await API.post("/reports", { target_type: "opportunity", target_id: Number(id), reason: reason.trim() });
+        if (err) { err.hidden = false; err.textContent = "Reported. Thank you."; }
+      } catch (ex) {
+        if (err) { err.hidden = false; err.textContent = ex.message; }
+      }
     };
   } catch (ex) {
     page.innerHTML = `<div class="form-error">${esc(ex.message)}</div>`;

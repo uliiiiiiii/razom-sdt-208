@@ -222,7 +222,7 @@ export function renderMap(app) {
       map.panTo(m.getLatLng());
     }
     if (row.dataset.type === "request") openDetail(row.dataset.id);
-    else if (m) m.openPopup();
+    else location.hash = `#/opportunities/${row.dataset.id}`;
   });
 
   window.__razomRefresh = () => {
