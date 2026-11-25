@@ -11,6 +11,7 @@ MIN_SECRET_LENGTH = 32
 class Settings:
     database_url: str
     jwt_secret: str
+    verification_key: str
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24
     cors_origins: tuple[str, ...] = ()
@@ -29,10 +30,16 @@ def get_settings() -> Settings:
         raise RuntimeError(
             f"JWT_SECRET must be set to a random string of at least {MIN_SECRET_LENGTH} characters"
         )
+    verification_key = os.getenv("VERIFICATION_KEY", "")
+    if len(verification_key) < MIN_SECRET_LENGTH:
+        raise RuntimeError(
+            f"VERIFICATION_KEY must be set to a random string of at least {MIN_SECRET_LENGTH} characters"
+        )
     cors = os.getenv("CORS_ORIGINS", "")
     return Settings(
         database_url=db_url,
         jwt_secret=secret,
+        verification_key=verification_key,
         cors_origins=tuple(o.strip() for o in cors.split(",") if o.strip()),
         # lower only in tests, to keep the suite fast
         bcrypt_rounds=int(os.getenv("BCRYPT_ROUNDS", "12")),

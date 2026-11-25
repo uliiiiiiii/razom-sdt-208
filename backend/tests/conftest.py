@@ -9,6 +9,7 @@ os.environ.setdefault(
 )
 os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 os.environ["JWT_SECRET"] = "test-secret-" + "x" * 52
+os.environ["VERIFICATION_KEY"] = "test-verification-key-" + "y" * 40
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["BCRYPT_ROUNDS"] = "4"
 
@@ -145,3 +146,21 @@ def new_request(client, user: dict, **overrides):
         "address": "Khreshchatyk 1, apt 5",
     } | overrides
     return client.post("/api/requests", json=body, headers=user["h"])
+
+
+def png_bytes(size=(64, 64), color="red", fmt="PNG", exif: dict | None = None) -> bytes:
+    """A small in-memory image; `exif` maps tag id to value."""
+    import io
+
+    from PIL import Image
+
+    img = Image.new("RGB", size, color)
+    buf = io.BytesIO()
+    kwargs = {}
+    if exif:
+        e = Image.Exif()
+        for tag, value in exif.items():
+            e[tag] = value
+        kwargs["exif"] = e
+    img.save(buf, format=fmt, **kwargs)
+    return buf.getvalue()
