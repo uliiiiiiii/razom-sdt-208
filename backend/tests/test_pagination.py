@@ -79,3 +79,32 @@ def test_limit_bounds(client, params):
     mod = make_moderator(client)
     r = client.get("/api/moderation/access-log", params=params, headers=mod["h"])
     assert r.status_code == 422
+
+
+def test_reports_page_with_status(client):
+    mod = make_moderator(client)
+    for _ in range(5):
+        target = make_user(client, "resident")
+        r = client.post(
+            "/api/reports",
+            json={"target_type": "user", "target_id": target["id"], "reason": "spam spam"},
+            headers=make_user(client, "volunteer")["h"],
+        )
+        assert r.status_code == 201
+    url = "/api/moderation/reports"
+    assert ids(client, mod, url, limit=2) == [5, 4]
+    assert ids(client, mod, url, limit=2, before=4) == [3, 2]
+    assert ids(client, mod, url, status="dismissed") == []
+
+
+def test_users_page_past_50_with_query(client):
+    mod = make_moderator(client)
+    for _ in range(55):
+        make_user(client, "volunteer")
+    url = "/api/moderation/users"
+    first = ids(client, mod, url)
+    rest = ids(client, mod, url, before=first[-1])
+    assert len(first) == 50 and not set(first) & set(rest)
+    assert first + rest == list(range(56, 0, -1)) and mod["id"] in rest
+    found = ids(client, mod, url, q="user", limit=10)
+    assert found == list(range(56, 46, -1))

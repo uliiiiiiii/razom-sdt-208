@@ -60,6 +60,7 @@ moderator = require_roles("moderator")
 @router.get("/reports", response_model=list[ReportOut])
 def list_reports(
     status: Literal["open", "dismissed", "actioned"] = "open",
+    page: Page = Depends(page_params),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     other = aliased(Report)
@@ -72,12 +73,12 @@ def list_reports(
         )
         .scalar_subquery()
     )
-    rows = db.execute(
+    stmt = (
         select(Report, User, open_on_target)
         .join(User, User.id == Report.reporter_id)
         .where(Report.status == status)
-        .order_by(Report.created_at.desc(), Report.id.desc())
-    ).all()
+    )
+    rows = db.execute(paginate(stmt, Report.id, page)).all()
     return [_report_out(db, r, u, n) for r, u, n in rows]
 
 
@@ -220,12 +221,14 @@ def stats(db: Session = Depends(get_db)) -> dict:
 # users
 # ---------------------------------------------------------------------------
 @router.get("/users", response_model=list[UserAdmin])
-def search_users(q: str = "", db: Session = Depends(get_db)) -> list[User]:
-    stmt = select(User).order_by(User.created_at.desc()).limit(50)
+def search_users(
+    q: str = "", page: Page = Depends(page_params), db: Session = Depends(get_db)
+) -> list[User]:
+    stmt = select(User)
     if q:
-        like = f"%{q.lower()}%"
+        like = f"%{q}%"
         stmt = stmt.where(or_(User.email.ilike(like), User.display_name.ilike(like)))
-    return list(db.scalars(stmt))
+    return list(db.scalars(paginate(stmt, User.id, page)))
 
 
 @router.patch("/users/{user_id}", response_model=UserAdmin)

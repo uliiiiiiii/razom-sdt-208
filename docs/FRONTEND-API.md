@@ -171,7 +171,7 @@ Three reports from different users hide the item automatically (or suspend the u
 
 | Method & path | Notes |
 |---|---|
-| `GET /api/moderation/reports?status=open\|dismissed\|actioned` | `[{id, target_type, target_id, reason, status, created_at, reporter{id, display_name}, open_reports_on_target}]` |
+| `GET /api/moderation/reports?status=open\|dismissed\|actioned&limit=&before=` | Paged (see below). `[{id, target_type, target_id, reason, status, created_at, reporter{id, display_name}, open_reports_on_target}]` |
 | `GET /api/moderation/reports/{id}` | The same fields plus `target`, the reported request/opportunity/user. For a request with an **open** report, `target` includes the exact address, and **this view is logged**. Say so on screen. |
 | `PATCH /api/moderation/reports/{id}` | `{decision: dismiss\|hide\|block}`. It resolves all open reports on that target. `dismiss` undoes an automatic hide; `hide` applies to content only; `block` blocks the user or the content's owner. 409 if already resolved. |
 | `PATCH /api/moderation/requests/{id}` | `{is_hidden}`: hide or unhide a request directly. |
@@ -179,14 +179,16 @@ Three reports from different users hide the item automatically (or suspend the u
 | `GET /api/moderation/organizations?status=pending\|approved\|rejected` | `[{id, org_name, verification_status, created_at, user{id, email, display_name, roles}}]` |
 | `PATCH /api/moderation/organizations/{id}` | `{decision: approved\|rejected, comment?}` |
 | `GET /api/moderation/organizations/{id}/stats` | The same shape as the organization's own stats. |
-| `GET /api/moderation/users?q=` | Search by email or name (max 50): `[{id, email, display_name, roles, is_blocked, created_at}]` |
+| `GET /api/moderation/users?q=&limit=&before=` | Search by email or name; paged (see below): `[{id, email, display_name, roles, is_blocked, created_at}]` |
 | `PATCH /api/moderation/users/{id}` | `{is_blocked?, is_moderator?}`. Blocking releases their claims. You can't change yourself (400). |
-| `GET /api/moderation/access-log?request_id=` | Who saw which exact address, when, and how: `[{request_id, user{id, display_name}, via: claim\|report_review, accessed_at}]` |
+| `GET /api/moderation/access-log?request_id=&limit=&before=` | Who saw which exact address, when, and how; paged (see below). Repeat views by the same person within an hour are one entry: `[{id, request_id, user{id, display_name}, via: claim\|report_review, accessed_at}]` |
 | `GET /api/moderation/stats` | `{requests_by_status, requests_by_category, users_total, active_users_30d, pending_reports, pending_organizations}` |
+
+**Paging (reports, users, access log).** Newest first. `limit` is 1–200 (default 50; outside that range gives 422). To load older rows, send `before` = the `id` of the last row you have. A page shorter than `limit` means there is nothing older, so hide the "Load older" button. Pages stay correct while new rows arrive, because new rows always have higher ids.
 
 ## 10. Not available yet
 
-- Pagination: lists return everything (moderation users: 50, access log: 200).
+- Pagination outside moderation: the "my …" lists and organizations return everything; the map returns the 300 nearest items.
 - Editing a request after creating it.
 - Profile or password changes, and logout on the server. Logging out means deleting the token in the browser.
 - Machine-readable error codes. `detail` is English; map the common ones in the UI.
